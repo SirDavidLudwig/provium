@@ -10,14 +10,18 @@ from .provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
+from .reader import ArtifactReader
+from .writer import ArtifactWriter
 
 __version__ = version("provium")
 
 __all__ = [
+    "ArtifactHeader",
     "ArtifactLineage",
+    "ArtifactReader",
     "ArtifactRecord",
     "ArtifactReference",
-    "ArtifactHeader",
+    "ArtifactWriter",
     "ConfigCodec",
     "ConfigurationSnapshot",
     "JsonValue",

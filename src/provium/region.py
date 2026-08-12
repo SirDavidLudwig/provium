@@ -29,12 +29,17 @@ class BodyRegion:
         self._owner = owner
         self._writable = writable
         self._position = 0
+        self._closed = False
 
     @property
     def length(self) -> int:
         return self._length
 
-    def _check_context(self) -> None:
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def check_context(self) -> None:
         if current_context() is not self._owner:
             raise RuntimeError(
                 "body region is not owned by the active execution context"
@@ -42,15 +47,26 @@ class BodyRegion:
         if not getattr(self._owner, "active", False):
             raise RuntimeError("body region owner is no longer active")
 
+    def check_access(self) -> None:
+        self.check_context()
+        if self._closed:
+            raise ValueError("body region is closed")
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self.check_context()
+        self._closed = True
+
     def _position_stream(self) -> None:
         self._stream.seek(self._body_offset + self._position, os.SEEK_SET)
 
     def tell(self) -> int:
-        self._check_context()
+        self.check_access()
         return self._position
 
     def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
-        self._check_context()
+        self.check_access()
         if whence == os.SEEK_SET:
             position = offset
         elif whence == os.SEEK_CUR:
@@ -68,7 +84,7 @@ class BodyRegion:
         return position
 
     def read(self, size: int | None = -1) -> bytes:
-        self._check_context()
+        self.check_access()
         if self._writable:
             raise io.UnsupportedOperation("read")
         remaining = self._length - self._position
@@ -79,7 +95,7 @@ class BodyRegion:
         return result
 
     def readinto(self, buffer: bytearray | memoryview) -> int:
-        self._check_context()
+        self.check_access()
         if self._writable:
             raise io.UnsupportedOperation("read")
         target = memoryview(buffer).cast("B")
@@ -88,7 +104,7 @@ class BodyRegion:
         return len(result)
 
     def write(self, data: bytes | bytearray | memoryview) -> int:
-        self._check_context()
+        self.check_access()
         if not self._writable:
             raise io.UnsupportedOperation("write")
         self._position_stream()
@@ -98,7 +114,7 @@ class BodyRegion:
         return written
 
     def flush(self) -> None:
-        self._check_context()
+        self.check_access()
         self._stream.flush()
 
 
