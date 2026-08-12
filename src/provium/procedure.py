@@ -204,6 +204,9 @@ class ExecutionContext[ConfigT]:
         if expected is not None and registration.artifact not in expected:
             raise TypeError("artifact is outside the expected artifact types")
 
+        metadata_end = header.metadata_offset + header.metadata_length
+        if header.body_offset < metadata_end:
+            raise ValueError("artifact body offset overlaps its header metadata")
         body_end = header.body_offset + header.body_length
         if body_end > len(data):
             raise ValueError("artifact body is truncated")
