@@ -160,6 +160,8 @@ class ExecutionContext[ConfigT]:
         try:
             if exc_type is None:
                 self._finalize_success()
+            else:
+                self._cleanup_failure()
         finally:
             self.active = False
             self._token = None
@@ -338,6 +340,20 @@ class ExecutionContext[ConfigT]:
             output.path.write_bytes(encoded + bytes(_BODY_OFFSET - len(encoded)) + body)
             output.writer._replace_metadata(header)
             output.writer.finalize()
+
+    def _cleanup_failure(self) -> None:
+        resources = [
+            *self._readers,
+            *(output.writer for output in self._pending_outputs),
+        ]
+        for resource in resources:
+            try:
+                resource.close()
+            except Exception:
+                try:
+                    resource._body.close()
+                except Exception:
+                    pass
 
 
 def current_execution() -> ExecutionContext[Any] | None:
