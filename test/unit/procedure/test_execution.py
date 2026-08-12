@@ -12,6 +12,7 @@ from provium import (
     ArtifactWriter,
     ConfigurationSnapshot,
     ExecutionContext,
+    JsonValue,
     Procedure,
     current_execution,
     open_artifact,
@@ -26,7 +27,7 @@ class Settings:
 class SettingsCodec:
     identifier = "settings-v1"
 
-    def encode(self, config: Settings) -> object:
+    def encode(self, config: Settings) -> JsonValue:
         return {"value": config.value}
 
     def decode(self, value: object) -> Settings:
@@ -113,8 +114,9 @@ def test_rejects_nested_procedure_contexts_in_same_logical_context() -> None:
             with inner.execute():
                 pass
 
-        assert current_execution() is not None
-        assert current_execution().procedure is outer
+        active_execution = current_execution()
+        assert active_execution is not None
+        assert active_execution.procedure is outer
 
 
 def test_allows_independent_contextvars_contexts() -> None:

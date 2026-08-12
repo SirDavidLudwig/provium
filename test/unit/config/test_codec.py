@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from provium import ConfigurationSnapshot, Procedure
+from provium import ConfigurationSnapshot, JsonValue, Procedure
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,7 @@ class ExampleConfig:
 class ExampleCodec:
     identifier = "example-config-v1"
 
-    def encode(self, config: ExampleConfig) -> object:
+    def encode(self, config: ExampleConfig) -> JsonValue:
         return {"name": config.name, "values": list(config.values)}
 
     def decode(self, value: object) -> ExampleConfig:
@@ -75,8 +75,8 @@ def test_snapshot_rejects_non_json_values(value: object) -> None:
 class BrokenCodec:
     identifier = "broken-v1"
 
-    def encode(self, config: object) -> object:
-        return {"not-json": config}
+    def encode(self, config: object) -> JsonValue:
+        return cast(JsonValue, {"not-json": config})
 
     def decode(self, value: object) -> object:
         return value
