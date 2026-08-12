@@ -44,3 +44,10 @@ source = ["provium"]
 fail_under = 100
 show_missing = true
 skip_covered = false
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "TRY", "UP"]
+ignore = ["TRY003"]
