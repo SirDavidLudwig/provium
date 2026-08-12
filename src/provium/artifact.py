@@ -1,0 +1,84 @@
+"""Generic typed artifact definitions and lazy provider resolution."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from os import PathLike
+from typing import Any, ClassVar, cast
+
+from .context import current_context
+from .reader import ArtifactReader
+from .writer import ArtifactWriter
+
+
+class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
+    """Bind a logical artifact type to its concrete reader and writer types."""
+
+    reader: type[ReaderT] | Callable[[], type[ReaderT]]
+    writer: type[WriterT] | Callable[[], type[WriterT]]
+    _reader_type_cache: ClassVar[type[ArtifactReader] | None] = None
+    _writer_type_cache: ClassVar[type[ArtifactWriter] | None] = None
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._reader_type_cache = None
+        cls._writer_type_cache = None
+
+    @classmethod
+    def _resolve_reader(cls) -> type[ReaderT]:
+        cached = cls._reader_type_cache
+        if cached is not None:
+            return cast(type[ReaderT], cached)
+        provider = getattr(cls, "reader", None)
+        candidate = (
+            provider
+            if isinstance(provider, type)
+            else provider()
+            if callable(provider)
+            else None
+        )
+        if not isinstance(candidate, type) or not issubclass(candidate, ArtifactReader):
+            raise TypeError("reader provider must resolve to an ArtifactReader type")
+        cls._reader_type_cache = candidate
+        return cast(type[ReaderT], candidate)
+
+    @classmethod
+    def _resolve_writer(cls) -> type[WriterT]:
+        cached = cls._writer_type_cache
+        if cached is not None:
+            return cast(type[WriterT], cached)
+        provider = getattr(cls, "writer", None)
+        candidate = (
+            provider
+            if isinstance(provider, type)
+            else provider()
+            if callable(provider)
+            else None
+        )
+        if not isinstance(candidate, type) or not issubclass(candidate, ArtifactWriter):
+            raise TypeError("writer provider must resolve to an ArtifactWriter type")
+        cls._writer_type_cache = candidate
+        return cast(type[WriterT], candidate)
+
+    @classmethod
+    def open(cls, path: str | PathLike[str]) -> ReaderT:
+        context = current_context()
+        if context is None:
+            raise RuntimeError("artifact I/O requires an active execution context")
+        opener = getattr(context, "open_artifact", None)
+        if not callable(opener):
+            raise TypeError("active context does not support artifact opening")
+        return cast(ReaderT, opener(cls, path, cls._resolve_reader()))
+
+    @classmethod
+    def create(cls, path: str | PathLike[str]) -> WriterT:
+        context = current_context()
+        if context is None:
+            raise RuntimeError("artifact I/O requires an active execution context")
+        creator = getattr(context, "create_artifact", None)
+        if not callable(creator):
+            raise TypeError("active context does not support artifact creating")
+        return cast(WriterT, creator(cls, path, cls._resolve_writer()))
+
+
+__all__ = ["Artifact"]
