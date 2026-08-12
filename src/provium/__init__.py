@@ -1,5 +1,7 @@
 from importlib.metadata import version
 
+from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
+from .procedure import Procedure
 from .provenance import (
     ArtifactLineage,
     ArtifactRecord,
@@ -14,6 +16,10 @@ __all__ = [
     "ArtifactLineage",
     "ArtifactRecord",
     "ArtifactReference",
+    "ConfigCodec",
+    "ConfigurationSnapshot",
+    "JsonValue",
+    "Procedure",
     "ProcedureExecutionRecord",
     "ProcedureRecord",
     "__version__",
