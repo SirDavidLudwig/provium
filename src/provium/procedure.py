@@ -15,14 +15,32 @@ from .catalog import ArtifactRegistration
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
 from .context import current_context, reset_context, set_context
 from .discovery import discover_catalogs
-from .header import decode_header
-from .provenance import ArtifactLineage, ArtifactRecord, ArtifactReference
+from .header import ArtifactHeader, decode_header, encode_header
+from .provenance import (
+    ArtifactLineage,
+    ArtifactRecord,
+    ArtifactReference,
+    ProcedureExecutionRecord,
+    ProcedureRecord,
+)
 from .reader import ArtifactReader
 from .region import BodyRegion
 
 if TYPE_CHECKING:
     from .artifact import Artifact
     from .writer import ArtifactWriter
+
+
+_BODY_OFFSET = 4096
+
+
+@dataclass(slots=True)
+class _PendingOutput:
+    path: Path
+    stream: io.BytesIO
+    reference: ArtifactReference
+    registration: ArtifactRegistration
+    writer: ArtifactWriter
 
 
 def _require_text(value: str, field_name: str) -> None:
@@ -99,6 +117,7 @@ class ExecutionContext[ConfigT]:
     _readers: list[ArtifactReader] = field(default_factory=list)
     _input_lineage: ArtifactLineage = field(default_factory=ArtifactLineage)
     _input_registrations: list[ArtifactRegistration] = field(default_factory=list)
+    _pending_outputs: list[_PendingOutput] = field(default_factory=list)
 
     @property
     def inputs(self) -> tuple[ArtifactRecord, ...]:
@@ -116,6 +135,14 @@ class ExecutionContext[ConfigT]:
     def input_registrations(self) -> tuple[ArtifactRegistration, ...]:
         return tuple(self._input_registrations)
 
+    @property
+    def writers(self) -> tuple[ArtifactWriter, ...]:
+        return tuple(output.writer for output in self._pending_outputs)
+
+    @property
+    def outputs(self) -> tuple[ArtifactReference, ...]:
+        return tuple(output.reference for output in self._pending_outputs)
+
     def __enter__(self) -> ExecutionContext[ConfigT]:
         if self._used:
             raise RuntimeError("execution context has already been entered")
@@ -130,9 +157,13 @@ class ExecutionContext[ConfigT]:
         if not self.active or current_context() is not self or self._token is None:
             raise RuntimeError("execution context is not active")
         token = self._token
-        self.active = False
-        self._token = None
-        reset_context(token)
+        try:
+            if exc_type is None:
+                self._finalize_success()
+        finally:
+            self.active = False
+            self._token = None
+            reset_context(token)
 
     def open_artifact(
         self,
@@ -210,7 +241,103 @@ class ExecutionContext[ConfigT]:
         path: str | PathLike[str],
         writer_type: type[ArtifactWriter],
     ) -> ArtifactWriter:
-        raise NotImplementedError("artifact creating is implemented in Step 10")
+        from .writer import ArtifactWriter
+
+        catalog = discover_catalogs()
+        try:
+            registration = catalog.registration_for(artifact)
+        except KeyError as error:
+            raise ValueError("artifact class is not registered") from error
+        reference = ArtifactReference(
+            str(uuid4()),
+            registration.canonical_identifier,
+        )
+        empty_digest = hashlib.sha256(b"").hexdigest()
+        provisional_execution = ProcedureExecutionRecord(
+            self.identity,
+            self._procedure_record(),
+            outputs=(reference,),
+        )
+        provisional_lineage = ArtifactLineage.for_execution(
+            provisional_execution,
+            (ArtifactRecord(reference, empty_digest, self.identity),),
+        )
+        metadata = ArtifactHeader(
+            artifact_identifier=registration.canonical_identifier,
+            artifact_identity=reference.identity,
+            body_offset=_BODY_OFFSET,
+            body_length=0,
+            body_digest=empty_digest,
+            lineage=provisional_lineage,
+        )
+        stream = io.BytesIO(bytes(_BODY_OFFSET))
+        region = BodyRegion(stream, _BODY_OFFSET, 0, self, writable=True)
+        writer = writer_type(region, metadata)
+        if not isinstance(writer, ArtifactWriter):
+            raise TypeError("writer type must construct an ArtifactWriter")
+        self._pending_outputs.append(
+            _PendingOutput(Path(path), stream, reference, registration, writer)
+        )
+        return writer
+
+    def _procedure_record(self) -> ProcedureRecord:
+        snapshot = self.config_snapshot
+        return ProcedureRecord(
+            self.procedure.name,
+            self.procedure.version,
+            None if snapshot is None else snapshot.value,
+            None if snapshot is None else snapshot.codec_identifier,
+        )
+
+    def _finalize_success(self) -> None:
+        for reader in self._readers:
+            reader.close()
+        for output in self._pending_outputs:
+            output.writer.close()
+        if not self._pending_outputs:
+            return
+
+        records: list[ArtifactRecord] = []
+        bodies: dict[str, bytes] = {}
+        for output in self._pending_outputs:
+            length = output.writer._body.length
+            data = output.stream.getvalue()
+            body = data[_BODY_OFFSET : _BODY_OFFSET + length]
+            bodies[output.reference.identity] = body
+            records.append(
+                ArtifactRecord(
+                    output.reference,
+                    hashlib.sha256(body).hexdigest(),
+                    self.identity,
+                )
+            )
+        execution = ProcedureExecutionRecord(
+            self.identity,
+            self._procedure_record(),
+            tuple(record.reference for record in self._inputs.values()),
+            tuple(output.reference for output in self._pending_outputs),
+        )
+        lineage = ArtifactLineage.for_execution(
+            execution,
+            tuple(records),
+            (self._input_lineage,) if self._inputs else (),
+        )
+        records_by_identity = {record.reference.identity: record for record in records}
+        for output in self._pending_outputs:
+            body = bodies[output.reference.identity]
+            record = records_by_identity[output.reference.identity]
+            header = ArtifactHeader(
+                artifact_identifier=output.registration.canonical_identifier,
+                artifact_identity=output.reference.identity,
+                body_offset=_BODY_OFFSET,
+                body_length=len(body),
+                body_digest=record.body_digest,
+                lineage=lineage,
+            )
+            encoded = encode_header(header)
+            output.path.write_bytes(encoded + bytes(_BODY_OFFSET - len(encoded)) + body)
+            output.writer._replace_metadata(header)
+            output.writer.finalize()
 
 
 def current_execution() -> ExecutionContext[Any] | None:

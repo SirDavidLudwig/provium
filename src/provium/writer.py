@@ -83,5 +83,9 @@ class ArtifactWriter:
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
         self.close()
 
+    def _replace_metadata(self, metadata: ArtifactHeader) -> None:
+        """Replace provisional metadata during owning-context finalization."""
+        self._metadata = metadata
+
 
 __all__ = ["ArtifactWriter"]

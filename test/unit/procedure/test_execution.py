@@ -7,6 +7,7 @@ import pytest
 
 from provium import (
     Artifact,
+    ArtifactCatalog,
     ArtifactReader,
     ArtifactWriter,
     ConfigurationSnapshot,
@@ -148,14 +149,48 @@ def test_artifact_io_without_active_context_is_rejected() -> None:
         open_artifact("input.pa")
 
 
-def test_scoped_creation_reaches_unimplemented_io_boundary() -> None:
-    with Procedure("example", "1").execute():
-        with pytest.raises(NotImplementedError, match="Step 10"):
-            Example.create("output.pa")
-
-
 def test_exit_requires_matching_active_context() -> None:
     execution = Procedure("example", "1").execute()
 
     with pytest.raises(RuntimeError, match="not active"):
         execution.__exit__(None, None, None)
+
+
+def test_exceptional_exit_restores_context_state() -> None:
+    with pytest.raises(LookupError, match="failure"):
+        with Procedure("example", "1").execute() as execution:
+            raise LookupError("failure")
+
+    assert not execution.active
+    assert current_execution() is None
+
+
+def test_create_rejects_unregistered_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
+
+    with (
+        Procedure("example", "1").execute(),
+        pytest.raises(ValueError, match="not registered"),
+    ):
+        Example.create("output.pa")
+
+
+def test_create_rejects_writer_factory_returning_wrong_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = ArtifactCatalog()
+    catalog.register("example.ExampleV1", Example)
+    monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
+
+    def invalid_writer(*args: object) -> object:
+        return object()
+
+    with (
+        Procedure("example", "1").execute() as execution,
+        pytest.raises(TypeError, match="ArtifactWriter"),
+    ):
+        execution.create_artifact(
+            Example,
+            "output.pa",
+            invalid_writer,  # type: ignore[arg-type]
+        )
