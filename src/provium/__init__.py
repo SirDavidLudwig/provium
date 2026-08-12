@@ -3,6 +3,7 @@ from importlib.metadata import version
 from .artifact import Artifact
 from .catalog import ArtifactCatalog, ArtifactRegistration
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
+from .discovery import discover_catalogs, reset_discovery
 from .header import ArtifactHeader, decode_header, encode_header
 from .procedure import Procedure
 from .provenance import (
@@ -35,5 +36,7 @@ __all__ = [
     "ProcedureRecord",
     "__version__",
     "decode_header",
+    "discover_catalogs",
     "encode_header",
+    "reset_discovery",
 ]

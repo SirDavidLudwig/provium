@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from .artifact import Artifact
 
@@ -63,6 +65,16 @@ class ArtifactCatalog:
 
     def registration_for(self, artifact: type[Artifact]) -> ArtifactRegistration:
         return self._artifacts[artifact]
+
+    @property
+    def registrations(self) -> Mapping[str, ArtifactRegistration]:
+        """Canonical registrations keyed by canonical identifier."""
+        return MappingProxyType(
+            {
+                registration.canonical_identifier: registration
+                for registration in self._artifacts.values()
+            }
+        )
 
 
 __all__ = ["ArtifactCatalog", "ArtifactRegistration"]
