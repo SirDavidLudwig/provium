@@ -96,6 +96,14 @@ def open_artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter](
 ) -> ReaderT: ...
 
 
+@overload
+def open_artifact(
+    path: str | PathLike[str],
+    *,
+    expected: tuple[type[Artifact], ...],
+) -> ArtifactReader: ...
+
+
 def open_artifact(
     path: str | PathLike[str],
     *,

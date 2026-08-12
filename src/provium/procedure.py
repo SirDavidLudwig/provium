@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import struct
 from contextvars import Token
 from dataclasses import dataclass, field
 from os import PathLike
@@ -15,7 +16,14 @@ from .catalog import ArtifactRegistration
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
 from .context import current_context, reset_context, set_context
 from .discovery import discover_catalogs
-from .header import ArtifactHeader, decode_header, encode_header
+from .header import (
+    CONTAINER_VERSION,
+    MAGIC,
+    PREFIX_SIZE,
+    ArtifactHeader,
+    decode_header,
+    encode_header,
+)
 from .provenance import (
     ArtifactLineage,
     ArtifactRecord,
@@ -41,6 +49,22 @@ class _PendingOutput:
     reference: ArtifactReference
     registration: ArtifactRegistration
     writer: ArtifactWriter
+
+
+def _read_header_from_stream(stream: Any) -> tuple[ArtifactHeader, int]:
+    prefix = stream.read(PREFIX_SIZE)
+    if len(prefix) < PREFIX_SIZE:
+        raise ValueError("truncated fixed header")
+    magic, version, metadata_offset, metadata_length = struct.unpack(">8sHQQ", prefix)
+    if magic != MAGIC:
+        raise ValueError("invalid artifact magic bytes")
+    if version != CONTAINER_VERSION:
+        raise ValueError(f"unsupported container version: {version}")
+    metadata_end = metadata_offset + metadata_length
+    stream.seek(0)
+    header = decode_header(stream.read(metadata_end))
+    stream.seek(0, io.SEEK_END)
+    return header, stream.tell()
 
 
 def _require_text(value: str, field_name: str) -> None:
@@ -190,28 +214,42 @@ class ExecutionContext[ConfigT]:
         reader_type: type[ArtifactReader] | None = None,
         expected: tuple[type[Artifact], ...] | None = None,
     ) -> ArtifactReader:
-        data = Path(path).read_bytes()
-        header = decode_header(data)
+        stream = Path(path).open("rb")
+        try:
+            header, file_length = _read_header_from_stream(stream)
+        except Exception:
+            stream.close()
+            raise
         catalog = discover_catalogs()
         try:
             registration = catalog.resolve(header.artifact_identifier)
         except KeyError as error:
+            stream.close()
             raise ValueError(
                 f"unknown artifact identifier: {header.artifact_identifier}"
             ) from error
         if requested is not None and registration.artifact is not requested:
+            stream.close()
             raise TypeError("artifact does not match the requested artifact type")
         if expected is not None and registration.artifact not in expected:
+            stream.close()
             raise TypeError("artifact is outside the expected artifact types")
 
         metadata_end = header.metadata_offset + header.metadata_length
         if header.body_offset < metadata_end:
+            stream.close()
             raise ValueError("artifact body offset overlaps its header metadata")
         body_end = header.body_offset + header.body_length
-        if body_end > len(data):
+        if body_end > file_length:
+            stream.close()
             raise ValueError("artifact body is truncated")
-        body = data[header.body_offset : body_end]
-        if hashlib.sha256(body).hexdigest() != header.body_digest:
+        digest = hashlib.sha256()
+        stream.seek(header.body_offset)
+        chunk_size = 1024 * 1024
+        for offset in range(0, header.body_length, chunk_size):
+            digest.update(stream.read(min(chunk_size, header.body_length - offset)))
+        if digest.hexdigest() != header.body_digest:
+            stream.close()
             raise ValueError("artifact body digest does not match")
         reference = ArtifactReference(
             header.artifact_identity,
@@ -220,20 +258,27 @@ class ExecutionContext[ConfigT]:
         try:
             record = header.lineage.artifact(reference)
         except (KeyError, ValueError) as error:
+            stream.close()
             raise ValueError(
                 "artifact lineage does not contain the opened artifact"
             ) from error
         if record.body_digest != header.body_digest:
+            stream.close()
             raise ValueError("artifact lineage body digest does not match header")
 
         concrete_reader = reader_type or registration.artifact._resolve_reader()
         region = BodyRegion(
-            io.BytesIO(data),
+            stream,
             header.body_offset,
             header.body_length,
             self,
+            close_stream=True,
         )
-        reader = concrete_reader(region, header)
+        try:
+            reader = concrete_reader(region, header)
+        except Exception:
+            stream.close()
+            raise
         self._readers.append(reader)
         self._inputs.setdefault(record.reference.identity, record)
         self._input_lineage = self._input_lineage.merge(header.lineage)

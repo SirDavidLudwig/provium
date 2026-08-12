@@ -149,6 +149,17 @@ def test_detects_malformed_metadata(tmp_path: Path) -> None:
         BytesArtifact.open(path)
 
 
+def test_detects_truncated_fixed_prefix_while_opening(tmp_path: Path) -> None:
+    path = tmp_path / "fixed-header.pa"
+    path.write_bytes(MAGIC)
+
+    with (
+        Procedure("read", "1").execute(),
+        pytest.raises(ValueError, match="fixed header"),
+    ):
+        BytesArtifact.open(path)
+
+
 @pytest.mark.parametrize(
     ("offset", "value", "message"),
     [

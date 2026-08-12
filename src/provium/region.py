@@ -20,6 +20,7 @@ class BodyRegion:
         owner: object,
         *,
         writable: bool = False,
+        close_stream: bool = False,
     ) -> None:
         if body_offset < 0 or body_length < 0:
             raise ValueError("body boundaries must be non-negative")
@@ -28,6 +29,7 @@ class BodyRegion:
         self._length = body_length
         self._owner = owner
         self._writable = writable
+        self._close_stream = close_stream
         self._position = 0
         self._closed = False
 
@@ -57,6 +59,8 @@ class BodyRegion:
             return
         self.check_context()
         self._closed = True
+        if self._close_stream:
+            self._stream.close()
 
     def _position_stream(self) -> None:
         self._stream.seek(self._body_offset + self._position, os.SEEK_SET)

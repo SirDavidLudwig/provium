@@ -49,6 +49,16 @@ class OtherArtifact(Artifact[OtherReader, OtherWriter]):
     writer = OtherWriter
 
 
+class BrokenReader(ArtifactReader):
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise RuntimeError("reader construction failed")
+
+
+class BrokenArtifact(Artifact[BrokenReader, OtherWriter]):
+    reader = BrokenReader
+    writer = OtherWriter
+
+
 @pytest.fixture
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
@@ -58,6 +68,7 @@ def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
         aliases=("example.LegacyBytesV1",),
     )
     catalog.register("example.OtherV1", OtherArtifact)
+    catalog.register("example.BrokenV1", BrokenArtifact)
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 
@@ -345,3 +356,21 @@ def test_reader_is_invalid_after_owning_context_exits(
         pytest.raises(RuntimeError, match="context"),
     ):
         reader.body.read()
+
+
+def test_reader_construction_failure_preserves_error(
+    tmp_path: Path, discovered_catalog: ArtifactCatalog
+) -> None:
+    path = tmp_path / "broken-reader.pa"
+    write_artifact(
+        path,
+        b"value",
+        identity="broken-1",
+        identifier="example.BrokenV1",
+    )
+
+    with (
+        Procedure("consume", "1").execute(),
+        pytest.raises(RuntimeError, match="construction failed"),
+    ):
+        open_artifact(path)
