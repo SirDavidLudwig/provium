@@ -7,7 +7,7 @@ from os import PathLike
 
 import pytest
 
-from provium import Artifact, ArtifactReader, ArtifactWriter
+from provium import Artifact, ArtifactReader, ArtifactWriter, open_artifact
 from provium.context import activate_context
 
 
@@ -156,3 +156,5 @@ def test_artifact_io_requires_a_compatible_active_context() -> None:
         Example.open("input.pa")
     with activate_context(object()), pytest.raises(TypeError, match="creating"):
         Example.create("output.pa")
+    with activate_context(object()), pytest.raises(TypeError, match="opening"):
+        open_artifact("input.pa")

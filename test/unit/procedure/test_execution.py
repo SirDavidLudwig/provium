@@ -148,14 +148,10 @@ def test_artifact_io_without_active_context_is_rejected() -> None:
         open_artifact("input.pa")
 
 
-def test_scoped_artifact_operations_reach_unimplemented_io_boundary() -> None:
+def test_scoped_creation_reaches_unimplemented_io_boundary() -> None:
     with Procedure("example", "1").execute():
-        with pytest.raises(NotImplementedError, match="Step 9"):
-            Example.open("input.pa")
         with pytest.raises(NotImplementedError, match="Step 10"):
             Example.create("output.pa")
-        with pytest.raises(NotImplementedError, match="Step 9"):
-            open_artifact("input.pa")
 
 
 def test_exit_requires_matching_active_context() -> None:

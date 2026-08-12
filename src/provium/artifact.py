@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from os import PathLike
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, cast, overload
 
 from .context import current_context
 from .reader import ArtifactReader
@@ -84,11 +84,34 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
 __all__ = ["Artifact"]
 
 
-def open_artifact(path: str | PathLike[str]) -> ArtifactReader:
+@overload
+def open_artifact(path: str | PathLike[str]) -> ArtifactReader: ...
+
+
+@overload
+def open_artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter](
+    path: str | PathLike[str],
+    *,
+    expected: type[Artifact[ReaderT, WriterT]],
+) -> ReaderT: ...
+
+
+def open_artifact(
+    path: str | PathLike[str],
+    *,
+    expected: type[Artifact] | tuple[type[Artifact], ...] | None = None,
+) -> ArtifactReader:
     """Open an artifact whose concrete type will be discovered from its header."""
-    if current_context() is None:
+    context = current_context()
+    if context is None:
         raise RuntimeError("artifact I/O requires an active execution context")
-    raise NotImplementedError("generic artifact opening is implemented in Step 9")
+    opener = getattr(context, "open_unknown_artifact", None)
+    if not callable(opener):
+        raise TypeError("active context does not support artifact opening")
+    expected_types = None
+    if expected is not None:
+        expected_types = expected if isinstance(expected, tuple) else (expected,)
+    return cast(ArtifactReader, opener(path, expected_types))
 
 
 __all__.append("open_artifact")
