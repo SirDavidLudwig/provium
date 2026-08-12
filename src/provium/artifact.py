@@ -82,3 +82,13 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
 
 
 __all__ = ["Artifact"]
+
+
+def open_artifact(path: str | PathLike[str]) -> ArtifactReader:
+    """Open an artifact whose concrete type will be discovered from its header."""
+    if current_context() is None:
+        raise RuntimeError("artifact I/O requires an active execution context")
+    raise NotImplementedError("generic artifact opening is implemented in Step 9")
+
+
+__all__.append("open_artifact")

@@ -1,11 +1,11 @@
 from importlib.metadata import version
 
-from .artifact import Artifact
+from .artifact import Artifact, open_artifact
 from .catalog import ArtifactCatalog, ArtifactRegistration
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
 from .discovery import discover_catalogs, reset_discovery
 from .header import ArtifactHeader, decode_header, encode_header
-from .procedure import Procedure
+from .procedure import ExecutionContext, Procedure, current_execution
 from .provenance import (
     ArtifactLineage,
     ArtifactRecord,
@@ -30,6 +30,7 @@ __all__ = [
     "ArtifactWriter",
     "ConfigCodec",
     "ConfigurationSnapshot",
+    "ExecutionContext",
     "JsonValue",
     "Procedure",
     "ProcedureExecutionRecord",
@@ -38,5 +39,7 @@ __all__ = [
     "decode_header",
     "discover_catalogs",
     "encode_header",
+    "current_execution",
+    "open_artifact",
     "reset_discovery",
 ]
