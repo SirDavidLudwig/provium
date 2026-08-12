@@ -15,6 +15,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/SirDavidLudwig/provium"
+Issues = "https://github.com/SirDavidLudwig/provium/issues"
+Repository = "https://github.com/SirDavidLudwig/provium"
+
 [project.optional-dependencies]
 test = [
     "pydantic>=2.10",

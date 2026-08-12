@@ -1,17 +1,35 @@
-name: Release package
+name: Release
 
 on:
   push:
-    tags:
-      - "v*"
-  workflow_dispatch:
+    branches:
+      - master
 
 permissions:
   contents: read
 
 jobs:
+  release_please:
+    name: Create or update release pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+
+    steps:
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          target-branch: master
+
   build:
     name: Build distribution
+    if: needs.release_please.outputs.release_created == 'true'
+    needs: release_please
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -43,23 +61,26 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  release:
-    name: Create GitHub release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: build
+  publish:
+    name: Publish to PyPI
+    if: needs.release_please.outputs.release_created == 'true'
+    needs:
+      - release_please
+      - build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/provium/
     permissions:
-      contents: write
+      id-token: write
 
     steps:
       - name: Download distribution artifacts
         uses: actions/download-artifact@v4
         with:
           name: provium-distributions
-          path: release-assets
+          path: dist
 
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
