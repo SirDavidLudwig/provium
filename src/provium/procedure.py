@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from .artifact.catalog import ArtifactRegistration
+from .artifact.definition import artifact_class_identifier
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
     CONTAINER_VERSION,
@@ -47,7 +48,7 @@ class _PendingOutput:
     path: Path
     stream: io.BytesIO
     reference: ArtifactReference
-    registration: ArtifactRegistration
+    artifact_identifier: str
     writer: ArtifactWriter
 
 
@@ -223,14 +224,23 @@ class ExecutionContext[ConfigT]:
         catalog = discover_catalogs()
         try:
             registration = catalog.resolve(header.artifact_identifier)
-        except KeyError as error:
+        except KeyError:
+            registration = None
+        if requested is not None:
+            matches_requested = (
+                registration is not None and registration.artifact is requested
+            ) or (
+                registration is None
+                and header.artifact_identifier == artifact_class_identifier(requested)
+            )
+            if not matches_requested:
+                stream.close()
+                raise TypeError("artifact does not match the requested artifact type")
+        elif registration is None:
             stream.close()
             raise ValueError(
                 f"unknown artifact identifier: {header.artifact_identifier}"
-            ) from error
-        if requested is not None and registration.artifact is not requested:
-            stream.close()
-            raise TypeError("artifact does not match the requested artifact type")
+            )
         if expected is not None and registration.artifact not in expected:
             stream.close()
             raise TypeError("artifact is outside the expected artifact types")
@@ -282,7 +292,8 @@ class ExecutionContext[ConfigT]:
         self._readers.append(reader)
         self._inputs.setdefault(record.reference.identity, record)
         self._input_lineage = self._input_lineage.merge(header.lineage)
-        self._input_registrations.append(registration)
+        if registration is not None:
+            self._input_registrations.append(registration)
         return reader
 
     def create_artifact(
@@ -296,11 +307,13 @@ class ExecutionContext[ConfigT]:
         catalog = discover_catalogs()
         try:
             registration = catalog.registration_for(artifact)
-        except KeyError as error:
-            raise ValueError("artifact class is not registered") from error
+        except KeyError:
+            artifact_identifier = artifact_class_identifier(artifact)
+        else:
+            artifact_identifier = registration.canonical_identifier
         reference = ArtifactReference(
             str(uuid4()),
-            registration.canonical_identifier,
+            artifact_identifier,
         )
         empty_digest = hashlib.sha256(b"").hexdigest()
         provisional_execution = ProcedureExecutionRecord(
@@ -313,7 +326,7 @@ class ExecutionContext[ConfigT]:
             (ArtifactRecord(reference, empty_digest, self.identity),),
         )
         metadata = ArtifactHeader(
-            artifact_identifier=registration.canonical_identifier,
+            artifact_identifier=artifact_identifier,
             artifact_identity=reference.identity,
             body_offset=_BODY_OFFSET,
             body_length=0,
@@ -326,7 +339,7 @@ class ExecutionContext[ConfigT]:
         if not isinstance(writer, ArtifactWriter):
             raise TypeError("writer type must construct an ArtifactWriter")
         self._pending_outputs.append(
-            _PendingOutput(Path(path), stream, reference, registration, writer)
+            _PendingOutput(Path(path), stream, reference, artifact_identifier, writer)
         )
         return writer
 
@@ -377,7 +390,7 @@ class ExecutionContext[ConfigT]:
             body = bodies[output.reference.identity]
             record = records_by_identity[output.reference.identity]
             header = ArtifactHeader(
-                artifact_identifier=output.registration.canonical_identifier,
+                artifact_identifier=output.artifact_identifier,
                 artifact_identity=output.reference.identity,
                 body_offset=_BODY_OFFSET,
                 body_length=len(body),

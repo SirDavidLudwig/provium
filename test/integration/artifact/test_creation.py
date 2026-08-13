@@ -171,6 +171,29 @@ def test_new_provenance_uses_canonical_identifier(tmp_path: Path) -> None:
     assert record.reference.artifact_identifier == "example.BytesV1"
 
 
+def test_unregistered_artifact_uses_full_class_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "unregistered.pa"
+    monkeypatch.setattr(
+        "provium.procedure.discover_catalogs",
+        lambda: ArtifactCatalog(),
+    )
+
+    with Procedure("create", "1").execute():
+        writer = BytesArtifact.create(path)
+        writer.write_value(b"value")
+
+    header, body = read_body(path)
+    expected = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"
+    assert body == b"value"
+    assert header.artifact_identifier == expected
+    assert header.lineage.artifacts[writer.identity].reference.artifact_identifier == (
+        expected
+    )
+
+
 def test_handles_are_invalid_after_exit_and_in_later_context(tmp_path: Path) -> None:
     path = tmp_path / "value.pa"
     with Procedure("create", "1").execute():
