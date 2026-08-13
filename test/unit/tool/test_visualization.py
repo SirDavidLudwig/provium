@@ -74,9 +74,7 @@ def test_render_lineage_builds_and_pipes_graph_in_memory(
     assert ("init", "provium-lineage", "svg") in calls
     assert ("edge", "artifact_1", "execution_0") in calls
     assert ("edge", "execution_0", "artifact_0") in calls
-    procedure_nodes = [
-        call for call in calls if call[:2] == ("node", "execution_0")
-    ]
+    procedure_nodes = [call for call in calls if call[:2] == ("node", "execution_0")]
     assert len(procedure_nodes) == 1
     assert "<B>transform</B>" in procedure_nodes[0][2]
     assert "Version: 2" in procedure_nodes[0][2]
@@ -148,13 +146,17 @@ def test_lineage_to_dot_returns_graphviz_source(
     class Digraph:
         source = "digraph lineage {}\n"
 
-        def __init__(self, *, name: str, format: str) -> None: pass
+        def __init__(self, *, name: str, format: str) -> None:
+            pass
 
-        def attr(self, **attributes: str) -> None: pass
+        def attr(self, **attributes: str) -> None:
+            pass
 
-        def node(self, name: str, label: str, **attributes: str) -> None: pass
+        def node(self, name: str, label: str, **attributes: str) -> None:
+            pass
 
-        def edge(self, tail: str, head: str) -> None: pass
+        def edge(self, tail: str, head: str) -> None:
+            pass
 
     monkeypatch.setitem(sys.modules, "graphviz", SimpleNamespace(Digraph=Digraph))
 

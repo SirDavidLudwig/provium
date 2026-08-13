@@ -9,4 +9,3 @@ __all__ = [
     "render_lineage",
     "render_mermaid",
 ]
-

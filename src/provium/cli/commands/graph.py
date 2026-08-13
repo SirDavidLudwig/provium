@@ -47,9 +47,7 @@ class GraphCommand:
             output.write_text(lineage_to_mermaid(header.lineage))
         elif format in {"pdf", "png", "svg"}:
             render = (
-                render_lineage
-                if arguments.renderer == "graphviz"
-                else render_mermaid
+                render_lineage if arguments.renderer == "graphviz" else render_mermaid
             )
             output.write_bytes(render(header.lineage, format=format))
         else:

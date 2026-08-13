@@ -71,4 +71,3 @@ def render_mermaid(lineage: ArtifactLineage, *, format: str = "png") -> bytes:
 
 
 __all__ = ["lineage_to_mermaid", "render_mermaid"]
-

@@ -57,4 +57,3 @@ class InspectCommand:
 
 
 __all__ = ["InspectCommand", "inspect_artifact"]
-

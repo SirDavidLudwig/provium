@@ -22,4 +22,3 @@ __all__ = [
     "open_artifact",
     "reset_discovery",
 ]
-

@@ -175,5 +175,6 @@ Run the test suite:
 pytest
 ```
 
+This also runs Ruff linting and `ruff format --check` over `src` and `test`.
 The project requires 100% statement and branch coverage for the `provium`
 package.

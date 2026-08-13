@@ -27,4 +27,3 @@ class Command(Protocol):
 
 
 __all__ = ["Command", "CommandContext"]
-
