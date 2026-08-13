@@ -223,7 +223,7 @@ with session():
     model_reader.close()
 
     for input_path, output_path in jobs:
-        with PREDICT.execute():
+        with PREDICT:
             data = DataArtifact.open(input_path)
             result = model.predict(data.read())
             ResultArtifact.create(output_path).write(result)
@@ -231,6 +231,9 @@ with session():
 
 Each result depends on the shared model and its own data artifact. Nested
 generic sessions similarly inherit artifacts recorded by their ancestors.
+
+Calling a procedure is shorthand for `execute()`, including configured
+executions: `with PREDICT(config=settings): ...`.
 
 ## Command-line tools
 
