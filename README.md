@@ -113,6 +113,24 @@ its output files. `sum.pa` contains the value `5` and records the `add` executio
 both of its integer inputs, and their producing execution. If a context exits
 with an exception, its pending outputs are not committed.
 
+Rendering the lineage for `sum.pa` produces a graph like this (identities are
+shortened here for readability):
+
+```mermaid
+flowchart LR
+    source(["source<br/>Version: 1"])
+    left["IntegerArtifact<br/>2"]
+    right["IntegerArtifact<br/>3"]
+    add(["add<br/>Version: 1"])
+    total["IntegerArtifact<br/>5"]
+
+    source --> left
+    source --> right
+    left --> add
+    right --> add
+    add --> total
+```
+
 Readers and writers are bound to the execution that created them and cannot be
 used after that context exits. Nested execution contexts are also rejected.
 
