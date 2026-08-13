@@ -36,25 +36,29 @@ python -m pip install provium
 
 ## Quick start
 
-Define reader, writer, and artifact classes for your binary format:
+Define an artifact that stores a signed 64-bit integer:
 
 ```python
+import struct
+
 from provium import Artifact, ArtifactReader, ArtifactWriter
 
-
-class BytesReader(ArtifactReader):
-    def read_value(self) -> bytes:
-        return self.body.read()
+INTEGER = struct.Struct(">q")
 
 
-class BytesWriter(ArtifactWriter):
-    def write_value(self, value: bytes) -> int:
-        return self.body.write(value)
+class IntegerReader(ArtifactReader):
+    def read_value(self) -> int:
+        return INTEGER.unpack(self.body.read(INTEGER.size))[0]
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+class IntegerWriter(ArtifactWriter):
+    def write_value(self, value: int) -> None:
+        self.body.write(INTEGER.pack(value))
+
+
+class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
+    reader = IntegerReader
+    writer = IntegerWriter
 ```
 
 Publish the artifact through a catalog in your package:
@@ -62,10 +66,10 @@ Publish the artifact through a catalog in your package:
 ```python
 from provium import ArtifactCatalog
 
-from .artifacts import BytesArtifact
+from .artifacts import IntegerArtifact
 
 catalog = ArtifactCatalog()
-catalog.register("example.BytesV1", BytesArtifact)
+catalog.register("example.IntegerV1", IntegerArtifact)
 ```
 
 Then expose that catalog from `pyproject.toml`. The identifier is stored in each
@@ -81,25 +85,29 @@ You can now create and consume artifacts inside procedure executions:
 ```python
 from provium import Procedure
 
-from your_package.artifacts import BytesArtifact
+from your_package.artifacts import IntegerArtifact
 
 SOURCE = Procedure(name="source", version="1")
-COPY = Procedure(name="copy", version="1")
+ADD = Procedure(name="add", version="1")
 
 with SOURCE.execute():
-    output = BytesArtifact.create("source.pa")
-    output.write_value(b"hello")
+    left = IntegerArtifact.create("left.pa")
+    left.write_value(2)
 
-with COPY.execute():
-    source = BytesArtifact.open("source.pa")
-    copy = BytesArtifact.create("copy.pa")
-    copy.write_value(source.read_value())
+    right = IntegerArtifact.create("right.pa")
+    right.write_value(3)
+
+with ADD.execute():
+    left = IntegerArtifact.open("left.pa")
+    right = IntegerArtifact.open("right.pa")
+    total = IntegerArtifact.create("sum.pa")
+    total.write_value(left.read_value() + right.read_value())
 ```
 
 When each context exits successfully, Provium closes its handles and finalizes
-its output files. `copy.pa` records both procedure executions and the relationship
-between the source and copied artifacts. If a context exits with an exception,
-its pending outputs are not committed.
+its output files. `sum.pa` contains the value `5` and records the `add` execution,
+both of its integer inputs, and their producing execution. If a context exits
+with an exception, its pending outputs are not committed.
 
 Readers and writers are bound to the execution that created them and cannot be
 used after that context exits. Nested execution contexts are also rejected.
@@ -111,10 +119,11 @@ Every reader exposes the artifact header and lineage:
 ```python
 from provium import Procedure
 
-from your_package.artifacts import BytesArtifact
+from your_package.artifacts import IntegerArtifact
 
 with Procedure("inspect", "1").execute():
-    artifact = BytesArtifact.open("copy.pa")
+    artifact = IntegerArtifact.open("sum.pa")
+    print(artifact.read_value())
     print(artifact.identity)
     print(artifact.artifact_identifier)
     print(artifact.lineage.to_json())
