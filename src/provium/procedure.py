@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
-from contextvars import Token
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
@@ -41,6 +41,10 @@ if TYPE_CHECKING:
 
 
 _BODY_OFFSET = 4096
+_direct_executions: ContextVar[dict[int, Any]] = ContextVar(
+    "provium_direct_procedure_executions",
+    default={},
+)
 
 
 @dataclass(slots=True)
@@ -110,6 +114,27 @@ class Procedure[ConfigT]:
             identity=str(uuid4()),
             config_snapshot=self.encode_config(config),
         )
+
+    def __call__(self, *, config: ConfigT | None = None) -> ExecutionContext[ConfigT]:
+        """Create an execution context using the same interface as execute."""
+        return self.execute(config=config)
+
+    def __enter__(self) -> ExecutionContext[ConfigT]:
+        """Enter a fresh unconfigured execution directly from the procedure."""
+        execution = self.execute()
+        entered = execution.__enter__()
+        active = dict(_direct_executions.get())
+        active[id(self)] = execution
+        _direct_executions.set(active)
+        return entered
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        active = dict(_direct_executions.get())
+        execution = active.pop(id(self), None)
+        if execution is None:
+            raise RuntimeError("procedure is not directly active")
+        _direct_executions.set(active)
+        execution.__exit__(exc_type, exc_value, traceback)
 
 
 @dataclass(slots=True)

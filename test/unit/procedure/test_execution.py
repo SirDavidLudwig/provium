@@ -95,6 +95,36 @@ def test_generates_one_unique_execution_identity_per_context() -> None:
     assert first.identity != second.identity
 
 
+def test_call_is_shorthand_for_execute() -> None:
+    procedure = Procedure[Settings]("configured", "1", SettingsCodec())
+
+    execution = procedure(config=Settings(42))
+
+    assert execution.procedure is procedure
+    assert execution.config_snapshot == ConfigurationSnapshot(
+        "settings-v1", {"value": 42}
+    )
+
+
+def test_enters_procedure_directly_with_a_fresh_execution() -> None:
+    procedure = Procedure("example", "1")
+
+    with procedure as first:
+        assert current_execution() is first
+        assert first.procedure is procedure
+
+    with procedure as second:
+        assert current_execution() is second
+
+    assert first.identity != second.identity
+    assert current_execution() is None
+
+
+def test_direct_procedure_exit_requires_a_matching_entry() -> None:
+    with pytest.raises(RuntimeError, match="not directly active"):
+        Procedure("example", "1").__exit__(None, None, None)
+
+
 def test_context_cannot_be_entered_twice_or_reentered() -> None:
     execution = Procedure("example", "1").execute()
 
