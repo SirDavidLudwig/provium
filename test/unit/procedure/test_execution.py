@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextvars import Context, copy_context
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -167,14 +168,17 @@ def test_exceptional_exit_restores_context_state() -> None:
     assert current_execution() is None
 
 
-def test_create_rejects_unregistered_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_uses_class_path_for_unregistered_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
+    path = tmp_path / "output.pa"
 
-    with (
-        Procedure("example", "1").execute(),
-        pytest.raises(ValueError, match="not registered"),
-    ):
-        Example.create("output.pa")
+    with Procedure("example", "1").execute():
+        writer = Example.create(path)
+
+    assert writer.artifact_identifier == f"{Example.__module__}.{Example.__qualname__}"
 
 
 def test_create_rejects_writer_factory_returning_wrong_object(

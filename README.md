@@ -61,26 +61,7 @@ class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
     writer = IntegerWriter
 ```
 
-Publish the artifact through a catalog in your package:
-
-```python
-from provium import ArtifactCatalog
-
-from .artifacts import IntegerArtifact
-
-catalog = ArtifactCatalog()
-catalog.register("example.IntegerV1", IntegerArtifact)
-```
-
-Then expose that catalog from `pyproject.toml`. The identifier is stored in each
-artifact, so keep it stable once files have been created.
-
-```toml
-[project.entry-points."provium.catalogs"]
-example = "your_package.catalog:catalog"
-```
-
-You can now create and consume artifacts inside procedure executions:
+Create and consume artifacts inside procedure executions:
 
 ```python
 from provium import Procedure
@@ -102,6 +83,29 @@ with ADD.execute():
     right = IntegerArtifact.open("right.pa")
     total = IntegerArtifact.create("sum.pa")
     total.write_value(left.read_value() + right.read_value())
+```
+
+Registration is optional. Without it, Provium stores the artifact class's full
+path, such as `your_package.artifacts.IntegerArtifact`, as its identifier. Typed
+calls such as `IntegerArtifact.open()` can read these artifacts directly.
+
+Register the artifact when you want a stable custom identifier, aliases, or
+dynamic loading through `provium.open_artifact()`:
+
+```python
+from provium import ArtifactCatalog
+
+from .artifacts import IntegerArtifact
+
+catalog = ArtifactCatalog()
+catalog.register("example.IntegerV1", IntegerArtifact)
+```
+
+Expose that catalog from `pyproject.toml` so Provium can discover it:
+
+```toml
+[project.entry-points."provium.catalogs"]
+example = "your_package.catalog:catalog"
 ```
 
 When each context exits successfully, Provium closes its handles and finalizes
