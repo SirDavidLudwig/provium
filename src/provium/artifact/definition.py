@@ -11,6 +11,11 @@ from .reader import ArtifactReader
 from .writer import ArtifactWriter
 
 
+def artifact_class_identifier(artifact: type[Artifact]) -> str:
+    """Return the default persistent identifier for an artifact class."""
+    return f"{artifact.__module__}.{artifact.__qualname__}"
+
+
 class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
     """Bind a logical artifact type to its concrete reader and writer types."""
 
@@ -81,7 +86,7 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
         return cast(WriterT, creator(cls, path, cls._resolve_writer()))
 
 
-__all__ = ["Artifact"]
+__all__ = ["Artifact", "artifact_class_identifier"]
 
 
 @overload

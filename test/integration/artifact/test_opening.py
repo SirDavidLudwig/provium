@@ -123,6 +123,50 @@ def test_opens_with_concrete_artifact_and_tracks_input(
         assert execution.readers == (reader,)
 
 
+def test_opens_unregistered_artifact_with_concrete_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "value.pa"
+    identifier = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"
+    reference, lineage = write_artifact(
+        path,
+        b"value",
+        identity="artifact-1",
+        identifier=identifier,
+    )
+    monkeypatch.setattr(
+        "provium.procedure.discover_catalogs",
+        lambda: ArtifactCatalog(),
+    )
+
+    with Procedure("consume", "1").execute() as execution:
+        reader = BytesArtifact.open(path)
+
+        assert reader.read_value() == b"value"
+        assert execution.inputs == (lineage.artifact(reference),)
+        assert execution.input_registrations == ()
+
+
+def test_generic_open_still_requires_dynamic_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "value.pa"
+    identifier = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"
+    write_artifact(path, b"value", identity="artifact-1", identifier=identifier)
+    monkeypatch.setattr(
+        "provium.procedure.discover_catalogs",
+        lambda: ArtifactCatalog(),
+    )
+
+    with (
+        Procedure("consume", "1").execute(),
+        pytest.raises(ValueError, match="unknown artifact identifier"),
+    ):
+        open_artifact(path)
+
+
 def test_opens_dynamically_and_resolves_concrete_reader(
     tmp_path: Path, discovered_catalog: ArtifactCatalog
 ) -> None:
