@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import struct
 from contextvars import Token
 from dataclasses import dataclass, field
 from os import PathLike
@@ -16,17 +15,17 @@ from .artifact.catalog import ArtifactRegistration
 from .artifact.definition import artifact_class_identifier
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
-    CONTAINER_VERSION,
-    MAGIC,
-    PREFIX_SIZE,
     ArtifactHeader,
-    decode_header,
     encode_header,
 )
 from .artifact.reader import ArtifactReader
 from .artifact.region import BodyRegion
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
-from .context import current_context, reset_context, set_context
+from .context import (
+    current_execution_context,
+    reset_execution_context,
+    set_execution_context,
+)
 from .provenance import (
     ArtifactLineage,
     ArtifactRecord,
@@ -34,6 +33,7 @@ from .provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
+from .session import Session, current_session
 
 if TYPE_CHECKING:
     from .artifact.definition import Artifact
@@ -50,22 +50,6 @@ class _PendingOutput:
     reference: ArtifactReference
     artifact_identifier: str
     writer: ArtifactWriter
-
-
-def _read_header_from_stream(stream: Any) -> tuple[ArtifactHeader, int]:
-    prefix = stream.read(PREFIX_SIZE)
-    if len(prefix) < PREFIX_SIZE:
-        raise ValueError("truncated fixed header")
-    magic, version, metadata_offset, metadata_length = struct.unpack(">8sHQQ", prefix)
-    if magic != MAGIC:
-        raise ValueError("invalid artifact magic bytes")
-    if version != CONTAINER_VERSION:
-        raise ValueError(f"unsupported container version: {version}")
-    metadata_end = metadata_offset + metadata_length
-    stream.seek(0)
-    header = decode_header(stream.read(metadata_end))
-    stream.seek(0, io.SEEK_END)
-    return header, stream.tell()
 
 
 def _require_text(value: str, field_name: str) -> None:
@@ -138,27 +122,27 @@ class ExecutionContext[ConfigT]:
     active: bool = False
     _used: bool = False
     _token: Token[object | None] | None = None
-    _inputs: dict[str, ArtifactRecord] = field(default_factory=dict)
-    _readers: list[ArtifactReader] = field(default_factory=list)
-    _input_lineage: ArtifactLineage = field(default_factory=ArtifactLineage)
-    _input_registrations: list[ArtifactRegistration] = field(default_factory=list)
+    _session: Session | None = None
+    _implicit_session: Session | None = None
     _pending_outputs: list[_PendingOutput] = field(default_factory=list)
 
     @property
     def inputs(self) -> tuple[ArtifactRecord, ...]:
-        return tuple(self._inputs.values())
+        return () if self._session is None else self._session.inputs
 
     @property
     def readers(self) -> tuple[ArtifactReader, ...]:
-        return tuple(self._readers)
+        return () if self._session is None else self._session.readers
 
     @property
     def input_lineage(self) -> ArtifactLineage:
-        return self._input_lineage
+        return (
+            ArtifactLineage() if self._session is None else self._session.input_lineage
+        )
 
     @property
     def input_registrations(self) -> tuple[ArtifactRegistration, ...]:
-        return tuple(self._input_registrations)
+        return () if self._session is None else self._session.input_registrations
 
     @property
     def writers(self) -> tuple[ArtifactWriter, ...]:
@@ -168,18 +152,30 @@ class ExecutionContext[ConfigT]:
     def outputs(self) -> tuple[ArtifactReference, ...]:
         return tuple(output.reference for output in self._pending_outputs)
 
+    def _owns_active_context(self) -> bool:
+        return self.active and current_execution_context() is self
+
     def __enter__(self) -> ExecutionContext[ConfigT]:
         if self._used:
             raise RuntimeError("execution context has already been entered")
-        if current_context() is not None:
+        if current_execution_context() is not None:
             raise RuntimeError("nested procedure execution contexts are not allowed")
         self._used = True
+        if current_session() is None:
+            self._implicit_session = Session(_discover_catalogs=discover_catalogs)
+            self._implicit_session.__enter__()
+        self._session = Session(_discover_catalogs=discover_catalogs)
+        self._session.__enter__()
         self.active = True
-        self._token = set_context(self)
+        self._token = set_execution_context(self)
         return self
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
-        if not self.active or current_context() is not self or self._token is None:
+        if (
+            not self.active
+            or current_execution_context() is not self
+            or self._token is None
+        ):
             raise RuntimeError("execution context is not active")
         token = self._token
         try:
@@ -190,111 +186,13 @@ class ExecutionContext[ConfigT]:
         finally:
             self.active = False
             self._token = None
-            reset_context(token)
-
-    def open_artifact(
-        self,
-        artifact: type[Artifact],
-        path: str | PathLike[str],
-        reader_type: type[ArtifactReader],
-    ) -> ArtifactReader:
-        return self._open(path, requested=artifact, reader_type=reader_type)
-
-    def open_unknown_artifact(
-        self,
-        path: str | PathLike[str],
-        expected: tuple[type[Artifact], ...] | None,
-    ) -> ArtifactReader:
-        return self._open(path, expected=expected)
-
-    def _open(
-        self,
-        path: str | PathLike[str],
-        *,
-        requested: type[Artifact] | None = None,
-        reader_type: type[ArtifactReader] | None = None,
-        expected: tuple[type[Artifact], ...] | None = None,
-    ) -> ArtifactReader:
-        stream = Path(path).open("rb")
-        try:
-            header, file_length = _read_header_from_stream(stream)
-        except Exception:
-            stream.close()
-            raise
-        catalog = discover_catalogs()
-        try:
-            registration = catalog.resolve(header.artifact_identifier)
-        except KeyError:
-            registration = None
-        if requested is not None:
-            matches_requested = (
-                registration is not None and registration.artifact is requested
-            ) or (
-                registration is None
-                and header.artifact_identifier == artifact_class_identifier(requested)
-            )
-            if not matches_requested:
-                stream.close()
-                raise TypeError("artifact does not match the requested artifact type")
-        elif registration is None:
-            stream.close()
-            raise ValueError(
-                f"unknown artifact identifier: {header.artifact_identifier}"
-            )
-        if expected is not None and registration.artifact not in expected:
-            stream.close()
-            raise TypeError("artifact is outside the expected artifact types")
-
-        metadata_end = header.metadata_offset + header.metadata_length
-        if header.body_offset < metadata_end:
-            stream.close()
-            raise ValueError("artifact body offset overlaps its header metadata")
-        body_end = header.body_offset + header.body_length
-        if body_end > file_length:
-            stream.close()
-            raise ValueError("artifact body is truncated")
-        digest = hashlib.sha256()
-        stream.seek(header.body_offset)
-        chunk_size = 1024 * 1024
-        for offset in range(0, header.body_length, chunk_size):
-            digest.update(stream.read(min(chunk_size, header.body_length - offset)))
-        if digest.hexdigest() != header.body_digest:
-            stream.close()
-            raise ValueError("artifact body digest does not match")
-        reference = ArtifactReference(
-            header.artifact_identity,
-            header.artifact_identifier,
-        )
-        try:
-            record = header.lineage.artifact(reference)
-        except (KeyError, ValueError) as error:
-            stream.close()
-            raise ValueError(
-                "artifact lineage does not contain the opened artifact"
-            ) from error
-        if record.body_digest != header.body_digest:
-            stream.close()
-            raise ValueError("artifact lineage body digest does not match header")
-
-        concrete_reader = reader_type or registration.artifact._resolve_reader()
-        region = BodyRegion(
-            stream,
-            header.body_offset,
-            header.body_length,
-            self,
-            close_stream=True,
-        )
-        try:
-            reader = concrete_reader(region, header)
-        except Exception:
-            stream.close()
-            raise
-        self._readers.append(reader)
-        self._inputs.setdefault(record.reference.identity, record)
-        self._input_lineage = self._input_lineage.merge(header.lineage)
-        if registration is not None:
-            self._input_registrations.append(registration)
-        return reader
+            reset_execution_context(token)
+            try:
+                assert self._session is not None
+                self._session.__exit__(exc_type, exc_value, traceback)
+            finally:
+                if self._implicit_session is not None:
+                    self._implicit_session.__exit__(exc_type, exc_value, traceback)
 
     def create_artifact(
         self,
@@ -353,8 +251,6 @@ class ExecutionContext[ConfigT]:
         )
 
     def _finalize_success(self) -> None:
-        for reader in self._readers:
-            reader.close()
         for output in self._pending_outputs:
             output.writer.close()
         if not self._pending_outputs:
@@ -377,13 +273,13 @@ class ExecutionContext[ConfigT]:
         execution = ProcedureExecutionRecord(
             self.identity,
             self._procedure_record(),
-            tuple(record.reference for record in self._inputs.values()),
+            tuple(record.reference for record in self.inputs),
             tuple(output.reference for output in self._pending_outputs),
         )
         lineage = ArtifactLineage.for_execution(
             execution,
             tuple(records),
-            (self._input_lineage,) if self._inputs else (),
+            (self.input_lineage,) if self.inputs else (),
         )
         records_by_identity = {record.reference.identity: record for record in records}
         for output in self._pending_outputs:
@@ -403,10 +299,7 @@ class ExecutionContext[ConfigT]:
             output.writer.finalize()
 
     def _cleanup_failure(self) -> None:
-        resources = [
-            *self._readers,
-            *(output.writer for output in self._pending_outputs),
-        ]
+        resources = [output.writer for output in self._pending_outputs]
         for resource in resources:
             try:
                 resource.close()
@@ -419,7 +312,7 @@ class ExecutionContext[ConfigT]:
 
 def current_execution() -> ExecutionContext[Any] | None:
     """Return the active Provium execution in this logical context."""
-    context = current_context()
+    context = current_execution_context()
     return context if isinstance(context, ExecutionContext) else None
 
 

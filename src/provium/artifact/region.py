@@ -42,7 +42,13 @@ class BodyRegion:
         return self._closed
 
     def check_context(self) -> None:
-        if current_context() is not self._owner:
+        owns_active_context = getattr(self._owner, "_owns_active_context", None)
+        active = (
+            owns_active_context()
+            if callable(owns_active_context)
+            else current_context() is self._owner
+        )
+        if not active:
             raise RuntimeError(
                 "body region is not owned by the active execution context"
             )

@@ -124,7 +124,7 @@ class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
 Use the custom type just like the prefab JSON artifact:
 
 ```python
-from provium import Procedure
+from provium import session
 
 from your_package.artifacts import IntegerArtifact
 
@@ -195,7 +195,7 @@ from provium import Procedure
 
 from your_package.artifacts import IntegerArtifact
 
-with Procedure("inspect", "1").execute():
+with session():
     artifact = IntegerArtifact.open("sum.pa")
     print(artifact.read())
     print(artifact.identity)
@@ -205,6 +205,32 @@ with Procedure("inspect", "1").execute():
 
 Use `provium.open_artifact()` when the concrete type should be resolved from the
 identifier stored in the file rather than selected in advance.
+
+## Reusing artifacts across procedures
+
+A session records every artifact opened within it, even after its reader is
+closed. Procedure executions inherit those recorded inputs and create a nested
+session for artifacts used only by that execution:
+
+```python
+from provium import Procedure, session
+
+PREDICT = Procedure(name="predict", version="1")
+
+with session():
+    model_reader = ModelArtifact.open("model.pa")
+    model = load_model(model_reader)
+    model_reader.close()
+
+    for input_path, output_path in jobs:
+        with PREDICT.execute():
+            data = DataArtifact.open(input_path)
+            result = model.predict(data.read())
+            ResultArtifact.create(output_path).write(result)
+```
+
+Each result depends on the shared model and its own data artifact. Nested
+generic sessions similarly inherit artifacts recorded by their ancestors.
 
 ## Command-line tools
 
