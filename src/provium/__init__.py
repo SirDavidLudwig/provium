@@ -1,10 +1,12 @@
 from importlib.metadata import version
 
 from .artifact import Artifact, open_artifact
-from .catalog import ArtifactCatalog, ArtifactRegistration
+from .artifact.catalog import ArtifactCatalog, ArtifactRegistration
+from .artifact.discovery import discover_catalogs, reset_discovery
+from .artifact.header import ArtifactHeader, decode_header, encode_header
+from .artifact.reader import ArtifactReader
+from .artifact.writer import ArtifactWriter
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
-from .discovery import discover_catalogs, reset_discovery
-from .header import ArtifactHeader, decode_header, encode_header
 from .procedure import ExecutionContext, Procedure, current_execution
 from .provenance import (
     ArtifactLineage,
@@ -13,8 +15,6 @@ from .provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
-from .reader import ArtifactReader
-from .writer import ArtifactWriter
 
 __version__ = version("provium")
 

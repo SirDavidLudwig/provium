@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .artifact import Artifact
+from .definition import Artifact
 
 
 def _require_identifier(value: str, field_name: str) -> None:

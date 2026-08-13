@@ -123,6 +123,41 @@ with Procedure("inspect", "1").execute():
 Use `provium.open_artifact()` when the concrete type should be resolved from the
 identifier stored in the file rather than selected in advance.
 
+## Command-line tools
+
+Inspect an artifact's generic metadata without loading its concrete artifact
+type:
+
+```bash
+provium inspect result.pa
+```
+
+Generate Mermaid or Graphviz source for an artifact's complete lineage:
+
+```bash
+provium graph --renderer mermaid result.pa lineage.mmd
+provium graph --renderer graphviz result.pa lineage.dot
+```
+
+Image output supports SVG, PNG, and PDF and defaults to the Mermaid renderer:
+
+```bash
+provium graph result.pa lineage.svg
+provium graph --renderer graphviz result.pa lineage.png
+```
+
+Mermaid image rendering requires the official `mmdc` executable. Graphviz
+rendering requires the optional Python package and Graphviz system package:
+
+```bash
+npm install --global @mermaid-js/mermaid-cli
+python -m pip install 'provium[visualization]'
+```
+
+The output type is inferred from its extension. Library callers can use the
+functions in `provium.tool` to produce Mermaid or DOT source and to receive
+rendered images as bytes.
+
 ## Development
 
 Create a virtual environment and install the project with its test dependencies:
@@ -140,5 +175,6 @@ Run the test suite:
 pytest
 ```
 
+This also runs Ruff linting and `ruff format --check` over `src` and `test`.
 The project requires 100% statement and branch coverage for the `provium`
 package.

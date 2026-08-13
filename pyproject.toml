@@ -15,16 +15,23 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+provium = "provium.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/SirDavidLudwig/provium"
 Issues = "https://github.com/SirDavidLudwig/provium/issues"
 Repository = "https://github.com/SirDavidLudwig/provium"
 
 [project.optional-dependencies]
+visualization = [
+    "graphviz>=0.20",
+]
 test = [
     "pydantic>=2.10",
     "pytest>=8.3",
     "pytest-cov>=6.0",
+    "ruff>=0.16",
 ]
 
 [tool.setuptools.packages.find]

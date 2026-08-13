@@ -12,11 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
-from .catalog import ArtifactRegistration
-from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
-from .context import current_context, reset_context, set_context
-from .discovery import discover_catalogs
-from .header import (
+from .artifact.catalog import ArtifactRegistration
+from .artifact.discovery import discover_catalogs
+from .artifact.header import (
     CONTAINER_VERSION,
     MAGIC,
     PREFIX_SIZE,
@@ -24,6 +22,10 @@ from .header import (
     decode_header,
     encode_header,
 )
+from .artifact.reader import ArtifactReader
+from .artifact.region import BodyRegion
+from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
+from .context import current_context, reset_context, set_context
 from .provenance import (
     ArtifactLineage,
     ArtifactRecord,
@@ -31,12 +33,10 @@ from .provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
-from .reader import ArtifactReader
-from .region import BodyRegion
 
 if TYPE_CHECKING:
-    from .artifact import Artifact
-    from .writer import ArtifactWriter
+    from .artifact.definition import Artifact
+    from .artifact.writer import ArtifactWriter
 
 
 _BODY_OFFSET = 4096
@@ -291,7 +291,7 @@ class ExecutionContext[ConfigT]:
         path: str | PathLike[str],
         writer_type: type[ArtifactWriter],
     ) -> ArtifactWriter:
-        from .writer import ArtifactWriter
+        from .artifact.writer import ArtifactWriter
 
         catalog = discover_catalogs()
         try:
