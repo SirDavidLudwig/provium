@@ -16,7 +16,7 @@ from provium import (
     decode_header,
     encode_header,
 )
-from provium.header import CONTAINER_VERSION, MAGIC, PREFIX_SIZE
+from provium.artifact.header import CONTAINER_VERSION, MAGIC, PREFIX_SIZE
 
 
 class BytesReader(ArtifactReader):

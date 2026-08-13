@@ -7,7 +7,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Any
 
-from .provenance import ArtifactLineage
+from ..provenance import ArtifactLineage
 
 MAGIC = b"PROVIUM\0"
 CONTAINER_VERSION = 1

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from os import PathLike
 from typing import Any, ClassVar, cast, overload
 
-from .context import current_context
+from ..context import current_context
 from .reader import ArtifactReader
 from .writer import ArtifactWriter
 

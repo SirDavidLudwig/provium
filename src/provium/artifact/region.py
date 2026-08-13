@@ -6,7 +6,7 @@ import io
 import os
 from typing import BinaryIO
 
-from .context import current_context
+from ..context import current_context
 
 
 class BodyRegion:

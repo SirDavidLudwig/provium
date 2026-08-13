@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from provium.artifact.region import BodyRegion
 from provium.context import activate_context
-from provium.region import BodyRegion
 
 
 @dataclass

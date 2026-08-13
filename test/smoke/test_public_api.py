@@ -163,7 +163,7 @@ def test_discovery_function_is_part_of_public_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "provium.discovery.metadata.entry_points", lambda: FakeEntryPoints()
+        "provium.artifact.discovery.metadata.entry_points", lambda: FakeEntryPoints()
     )
 
     reset_discovery()

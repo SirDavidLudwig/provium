@@ -6,7 +6,7 @@ from typing import ClassVar
 import pytest
 
 from provium import Artifact, ArtifactCatalog, ArtifactReader, ArtifactWriter
-from provium.discovery import discover_catalogs, reset_discovery
+from provium.artifact.discovery import discover_catalogs, reset_discovery
 
 
 class Reader(ArtifactReader):
@@ -72,7 +72,7 @@ def install_entry_points(
         FakeEntryPoint(f"catalog-{index}", value) for index, value in enumerate(values)
     ]
     monkeypatch.setattr(
-        "provium.discovery.metadata.entry_points",
+        "provium.artifact.discovery.metadata.entry_points",
         lambda: FakeEntryPoints(points),
     )
     return points
