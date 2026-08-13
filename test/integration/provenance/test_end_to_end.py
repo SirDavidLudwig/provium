@@ -19,12 +19,12 @@ from provium import (
 
 
 class BytesReader(ArtifactReader):
-    def read_value(self) -> bytes:
+    def read(self) -> bytes:
         return self.body.read()
 
 
 class BytesWriter(ArtifactWriter):
-    def write_value(self, value: bytes) -> int:
+    def write(self, value: bytes) -> int:
         return self.body.write(value)
 
 
@@ -76,7 +76,7 @@ def build_graph(tmp_path: Path) -> tuple[Path, Graph]:
         config=LabelConfig("seed")
     ) as root_execution:
         root_writer = BytesArtifact.create(root_path)
-        root_writer.write_value(b"root")
+        root_writer.write(b"root")
 
     left_path = tmp_path / "left.pa"
     with Procedure[LabelConfig]("branch-left", "2", LabelCodec()).execute(
@@ -84,7 +84,7 @@ def build_graph(tmp_path: Path) -> tuple[Path, Graph]:
     ) as left_execution:
         root_reader = BytesArtifact.open(root_path)
         left_writer = BytesArtifact.create(left_path)
-        left_writer.write_value(root_reader.read_value() + b"-left")
+        left_writer.write(root_reader.read() + b"-left")
 
     right_path = tmp_path / "right.pa"
     with Procedure[LabelConfig]("branch-right", "3", LabelCodec()).execute(
@@ -92,7 +92,7 @@ def build_graph(tmp_path: Path) -> tuple[Path, Graph]:
     ) as right_execution:
         root_reader = BytesArtifact.open(root_path)
         right_writer = BytesArtifact.create(right_path)
-        right_writer.write_value(root_reader.read_value() + b"-right")
+        right_writer.write(root_reader.read() + b"-right")
 
     final_path = tmp_path / "final.pa"
     with Procedure[LabelConfig]("join", "4", LabelCodec()).execute(
@@ -101,9 +101,7 @@ def build_graph(tmp_path: Path) -> tuple[Path, Graph]:
         left_reader = BytesArtifact.open(left_path)
         right_reader = BytesArtifact.open(right_path)
         final_writer = BytesArtifact.create(final_path)
-        final_writer.write_value(
-            left_reader.read_value() + b"+" + right_reader.read_value()
-        )
+        final_writer.write(left_reader.read() + b"+" + right_reader.read())
 
     return final_path, Graph(
         root=ArtifactReference(root_writer.identity, "example.BytesV1"),
@@ -125,7 +123,7 @@ def test_reconstructs_complete_branching_provenance_from_final_artifact(
     with Procedure("inspect", "1").execute():
         final_reader = BytesArtifact.open(final_path)
         lineage = final_reader.lineage
-        assert final_reader.read_value() == b"root-left+root-right"
+        assert final_reader.read() == b"root-left+root-right"
 
     assert set(lineage.artifacts) == {
         graph.root.identity,

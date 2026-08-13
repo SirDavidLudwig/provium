@@ -21,7 +21,7 @@ class ConfigCodec[ConfigT](Protocol):
     def decode(self, value: JsonValue) -> ConfigT: ...
 
 
-def _canonical_json_value(value: object) -> JsonValue:
+def normalize_json_value(value: object) -> JsonValue:
     """Validate a JSON value and return an independent normalized copy."""
     _validate_json_value(value)
     encoded = json.dumps(
@@ -65,7 +65,7 @@ class ConfigurationSnapshot:
     def __post_init__(self) -> None:
         if not isinstance(self.codec_identifier, str) or not self.codec_identifier:
             raise ValueError("codec_identifier must be a non-empty string")
-        object.__setattr__(self, "value", _canonical_json_value(self.value))
+        object.__setattr__(self, "value", normalize_json_value(self.value))
 
     def to_json(self) -> str:
         return json.dumps(
@@ -87,4 +87,9 @@ class ConfigurationSnapshot:
         return cls(decoded["codec_identifier"], decoded["value"])
 
 
-__all__ = ["ConfigCodec", "ConfigurationSnapshot", "JsonValue"]
+__all__ = [
+    "ConfigCodec",
+    "ConfigurationSnapshot",
+    "JsonValue",
+    "normalize_json_value",
+]

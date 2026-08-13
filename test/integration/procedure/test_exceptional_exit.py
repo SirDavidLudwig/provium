@@ -15,12 +15,12 @@ from provium import (
 
 
 class BytesReader(ArtifactReader):
-    def read_value(self) -> bytes:
+    def read(self) -> bytes:
         return self.body.read()
 
 
 class BytesWriter(ArtifactWriter):
-    def write_value(self, value: bytes) -> int:
+    def write(self, value: bytes) -> int:
         return self.body.write(value)
 
 
@@ -40,7 +40,7 @@ def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
 def create_valid(path: Path, body: bytes = b"source") -> None:
     with Procedure("seed", "1").execute():
         writer = BytesArtifact.create(path)
-        writer.write_value(body)
+        writer.write(body)
 
 
 def test_exception_closes_readers_and_writers_and_invalidates_handles(
@@ -54,7 +54,7 @@ def test_exception_closes_readers_and_writers_and_invalidates_handles(
         with Procedure("fail", "1").execute():
             reader = BytesArtifact.open(source)
             writer = BytesArtifact.create(output)
-            writer.write_value(reader.read_value())
+            writer.write(reader.read())
             raise LookupError("procedure failed")
 
     assert reader.closed
@@ -73,7 +73,7 @@ def test_failed_output_is_not_a_valid_artifact(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="failure"):
         with Procedure("fail", "1").execute():
             writer = BytesArtifact.create(output)
-            writer.write_value(b"incomplete")
+            writer.write(b"incomplete")
             raise RuntimeError("failure")
 
     assert not output.exists()

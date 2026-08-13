@@ -23,7 +23,7 @@ from provium import (
 
 
 class BytesReader(ArtifactReader):
-    def read_value(self) -> bytes:
+    def read(self) -> bytes:
         return self.body.read()
 
 
@@ -117,7 +117,7 @@ def test_opens_with_concrete_artifact_and_tracks_input(
     with Procedure("consume", "1").execute() as execution:
         reader = BytesArtifact.open(path)
         assert isinstance(reader, BytesReader)
-        assert reader.read_value() == b"value"
+        assert reader.read() == b"value"
         assert execution.inputs == (lineage.artifact(reference),)
         assert execution.input_lineage == lineage
         assert execution.readers == (reader,)
@@ -143,7 +143,7 @@ def test_opens_unregistered_artifact_with_concrete_type(
     with Procedure("consume", "1").execute() as execution:
         reader = BytesArtifact.open(path)
 
-        assert reader.read_value() == b"value"
+        assert reader.read() == b"value"
         assert execution.inputs == (lineage.artifact(reference),)
         assert execution.input_registrations == ()
 

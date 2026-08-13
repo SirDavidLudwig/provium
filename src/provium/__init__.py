@@ -4,6 +4,7 @@ from .artifact import Artifact, open_artifact
 from .artifact.catalog import ArtifactCatalog, ArtifactRegistration
 from .artifact.discovery import discover_catalogs, reset_discovery
 from .artifact.header import ArtifactHeader, decode_header, encode_header
+from .artifact.prefab import JsonArtifact, JsonArtifactReader, JsonArtifactWriter
 from .artifact.reader import ArtifactReader
 from .artifact.writer import ArtifactWriter
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
@@ -32,6 +33,9 @@ __all__ = [
     "ConfigurationSnapshot",
     "ExecutionContext",
     "JsonValue",
+    "JsonArtifact",
+    "JsonArtifactReader",
+    "JsonArtifactWriter",
     "Procedure",
     "ProcedureExecutionRecord",
     "ProcedureRecord",

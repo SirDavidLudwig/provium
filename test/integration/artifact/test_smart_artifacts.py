@@ -133,14 +133,14 @@ def test_reader_and_writer_provider_modules_load_lazily_and_cache_independently(
     path = tmp_path / "lazy.pa"
     with Procedure("write", "1").execute():
         writer = LazyArtifact.create(path)
-        writer.write_value(b"lazy")
+        writer.write(b"lazy")
     assert writer_module in sys.modules
     assert reader_module not in sys.modules
 
     writer_type = LazyArtifact._resolve_writer()
     with Procedure("read", "1").execute():
         reader = LazyArtifact.open(path)
-        assert reader.read_value() == b"lazy"
+        assert reader.read() == b"lazy"
     assert reader_module in sys.modules
     assert LazyArtifact._resolve_writer() is writer_type
     assert LazyArtifact._resolve_reader() is type(reader)
