@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.2.0...provium-v0.3.0) (2026-08-13)
+
+
+### Features
+
+* Add JSON artifact prefab. Update readme examples ([dcc70f5](https://github.com/SirDavidLudwig/provium/commit/dcc70f5e5a0762640667e2ab1bdd6532f20f860e))
+* Add JSON artifact prefab. Update readme examples ([3a5bd25](https://github.com/SirDavidLudwig/provium/commit/3a5bd2561c9d7a70794079f2a3fcc0c0393f29dc))
+
 ## [0.2.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.1.0...provium-v0.2.0) (2026-08-13)
 
 
