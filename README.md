@@ -36,7 +36,67 @@ python -m pip install provium
 
 ## Quick start
 
-Define an artifact that stores a signed 64-bit integer:
+Provium includes `JsonArtifact` for storing JSON-compatible values. This example
+records a collection of measurements and produces a summary:
+
+```python
+from provium import JsonArtifact, Procedure
+
+COLLECT = Procedure(name="collect", version="1")
+SUMMARIZE = Procedure(name="summarize", version="1")
+
+with COLLECT.execute():
+    measurements = JsonArtifact.create("measurements.pa")
+    measurements.write({"measurements": [12.5, 14.0, 13.5]})
+
+with SUMMARIZE.execute():
+    measurements = JsonArtifact.open("measurements.pa")
+    payload = measurements.read()
+    assert isinstance(payload, dict)
+    values = payload["measurements"]
+    assert isinstance(values, list)
+    readings = [float(value) for value in values]
+
+    summary = JsonArtifact.create("summary.pa")
+    summary.write(
+        {
+            "count": len(readings),
+            "minimum": min(readings),
+            "maximum": max(readings),
+            "average": round(sum(readings) / len(readings), 2),
+        }
+    )
+```
+
+`summary.pa` contains `count`, `minimum`, `maximum`, and `average`, together with
+the lineage of the measurements and the procedures that collected and
+summarized them. A rendered graph looks like this, with identities shortened for
+readability:
+
+```mermaid
+flowchart LR
+    collect(["collect 1<br/>collect-execution"])
+    measurements["provium.artifact.prefab.json.JsonArtifact<br/>measurements-id"]
+    summarize(["summarize 1<br/>summarize-execution"])
+    summary["provium.artifact.prefab.json.JsonArtifact<br/>summary-id"]
+
+    collect --> measurements
+    measurements --> summarize
+    summarize --> summary
+```
+
+When each context exits successfully, Provium closes its handles and finalizes
+its output files. If a context exits with an exception, its pending outputs are
+not committed. Readers and writers are bound to their execution and cannot be
+used after its context exits.
+
+`JsonArtifact` uses deterministic UTF-8 JSON encoding and supports null,
+booleans, finite numbers, strings, arrays, and objects with string keys.
+
+## Custom artifact types
+
+For an application-specific binary format, define reader, writer, and artifact
+classes. Here is the same number workflow using signed 64-bit integers:
 
 ```python
 import struct
@@ -47,12 +107,12 @@ INTEGER = struct.Struct(">q")
 
 
 class IntegerReader(ArtifactReader):
-    def read_value(self) -> int:
+    def read(self) -> int:
         return INTEGER.unpack(self.body.read(INTEGER.size))[0]
 
 
 class IntegerWriter(ArtifactWriter):
-    def write_value(self, value: int) -> None:
+    def write(self, value: int) -> None:
         self.body.write(INTEGER.pack(value))
 
 
@@ -61,7 +121,7 @@ class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
     writer = IntegerWriter
 ```
 
-Create and consume artifacts inside procedure executions:
+Use the custom type just like the prefab JSON artifact:
 
 ```python
 from provium import Procedure
@@ -73,16 +133,34 @@ ADD = Procedure(name="add", version="1")
 
 with SOURCE.execute():
     left = IntegerArtifact.create("left.pa")
-    left.write_value(2)
+    left.write(2)
 
     right = IntegerArtifact.create("right.pa")
-    right.write_value(3)
+    right.write(3)
 
 with ADD.execute():
     left = IntegerArtifact.open("left.pa")
     right = IntegerArtifact.open("right.pa")
     total = IntegerArtifact.create("sum.pa")
-    total.write_value(left.read_value() + right.read_value())
+    total.write(left.read() + right.read())
+```
+
+The workflow has the same lineage, now with application-specific integer
+artifacts. Identities are again shortened in the diagram:
+
+```mermaid
+flowchart LR
+    source(["source 1<br/>source-execution"])
+    left["your_package.artifacts.IntegerArtifact<br/>left-id"]
+    right["your_package.artifacts.IntegerArtifact<br/>right-id"]
+    add(["add 1<br/>add-execution"])
+    total["your_package.artifacts.IntegerArtifact<br/>sum-id"]
+
+    source --> left
+    source --> right
+    left --> add
+    right --> add
+    add --> total
 ```
 
 Registration is optional. Without it, Provium stores the artifact class's full
@@ -108,32 +186,6 @@ Expose that catalog from `pyproject.toml` so Provium can discover it:
 example = "your_package.catalog:catalog"
 ```
 
-When each context exits successfully, Provium closes its handles and finalizes
-its output files. `sum.pa` contains the value `5` and records the `add` execution,
-both of its integer inputs, and their producing execution. If a context exits
-with an exception, its pending outputs are not committed.
-
-Rendering the lineage for `sum.pa` produces a graph like this (identities are
-shortened here for readability):
-
-```mermaid
-flowchart LR
-    source(["source<br/>Version: 1"])
-    left["IntegerArtifact<br/>2"]
-    right["IntegerArtifact<br/>3"]
-    add(["add<br/>Version: 1"])
-    total["IntegerArtifact<br/>5"]
-
-    source --> left
-    source --> right
-    left --> add
-    right --> add
-    add --> total
-```
-
-Readers and writers are bound to the execution that created them and cannot be
-used after that context exits. Nested execution contexts are also rejected.
-
 ## Inspecting provenance
 
 Every reader exposes the artifact header and lineage:
@@ -145,7 +197,7 @@ from your_package.artifacts import IntegerArtifact
 
 with Procedure("inspect", "1").execute():
     artifact = IntegerArtifact.open("sum.pa")
-    print(artifact.read_value())
+    print(artifact.read())
     print(artifact.identity)
     print(artifact.artifact_identifier)
     print(artifact.lineage.to_json())

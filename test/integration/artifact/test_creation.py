@@ -18,12 +18,12 @@ from provium import (
 
 
 class BytesReader(ArtifactReader):
-    def read_value(self) -> bytes:
+    def read(self) -> bytes:
         return self.body.read()
 
 
 class BytesWriter(ArtifactWriter):
-    def write_value(self, value: bytes) -> int:
+    def write(self, value: bytes) -> int:
         return self.body.write(value)
 
 
@@ -71,8 +71,8 @@ def test_streams_body_and_force_finalizes_writer_on_exit(tmp_path: Path) -> None
 
     with Procedure("create", "1").execute():
         writer = BytesArtifact.create(path)
-        writer.write_value(b"abc")
-        writer.write_value(b"def")
+        writer.write(b"abc")
+        writer.write(b"def")
         assert not writer.closed
 
     assert writer.closed
@@ -85,9 +85,9 @@ def test_seek_and_backpatch_digest_final_actual_bytes(tmp_path: Path) -> None:
 
     with Procedure("create", "1").execute():
         writer = BytesArtifact.create(path)
-        writer.write_value(b"0000payload")
+        writer.write(b"0000payload")
         writer.body.seek(0)
-        writer.write_value(b"0011")
+        writer.write(b"0011")
 
     header, body = read_body(path)
     assert body == b"0011payload"
@@ -99,7 +99,7 @@ def test_explicit_close_before_exit_preserves_final_provenance(tmp_path: Path) -
 
     with Procedure("create", "1").execute() as execution:
         writer = BytesArtifact.create(path)
-        writer.write_value(b"value")
+        writer.write(b"value")
         writer.close()
         assert writer.body_complete
         assert not writer.container_finalized
@@ -113,14 +113,14 @@ def test_scope_closes_open_readers_and_writers(tmp_path: Path) -> None:
     source = tmp_path / "source.pa"
     with Procedure("seed", "1").execute():
         seed = BytesArtifact.create(source)
-        seed.write_value(b"source")
+        seed.write(b"source")
 
     output = tmp_path / "output.pa"
     with Procedure("copy", "1").execute():
         first = BytesArtifact.open(source)
         second = BytesArtifact.open(source)
         writer = BytesArtifact.create(output)
-        writer.write_value(first.read_value())
+        writer.write(first.read())
 
     assert first.closed
     assert second.closed
@@ -132,17 +132,17 @@ def test_multiple_outputs_share_execution_and_complete_io_sets(tmp_path: Path) -
     source = tmp_path / "source.pa"
     with Procedure("seed", "1").execute():
         seed = BytesArtifact.create(source)
-        seed.write_value(b"source")
+        seed.write(b"source")
 
     first_path = tmp_path / "first.pa"
     second_path = tmp_path / "second.pa"
     with Procedure("split", "2").execute() as execution:
         source_reader = open_artifact(source, expected=BytesArtifact)
         first = BytesArtifact.create(first_path)
-        first.write_value(source_reader.body.read())
+        first.write(source_reader.body.read())
         first.close()
         second = BytesArtifact.create(second_path)
-        second.write_value(b"other")
+        second.write(b"other")
 
     first_header, _ = read_body(first_path)
     second_header, _ = read_body(second_path)
@@ -183,7 +183,7 @@ def test_unregistered_artifact_uses_full_class_path(
 
     with Procedure("create", "1").execute():
         writer = BytesArtifact.create(path)
-        writer.write_value(b"value")
+        writer.write(b"value")
 
     header, body = read_body(path)
     expected = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"

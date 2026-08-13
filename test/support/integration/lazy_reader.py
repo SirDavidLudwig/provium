@@ -4,5 +4,5 @@ from provium import ArtifactReader
 
 
 class LazyReader(ArtifactReader):
-    def read_value(self) -> bytes:
+    def read(self) -> bytes:
         return self.body.read()

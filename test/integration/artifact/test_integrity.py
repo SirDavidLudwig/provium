@@ -20,12 +20,12 @@ from provium.artifact.header import CONTAINER_VERSION, MAGIC, PREFIX_SIZE
 
 
 class BytesReader(ArtifactReader):
-    def read_value(self) -> bytes:
+    def read(self) -> bytes:
         return self.body.read()
 
 
 class BytesWriter(ArtifactWriter):
-    def write_value(self, value: bytes) -> int:
+    def write(self, value: bytes) -> int:
         return self.body.write(value)
 
 
@@ -45,7 +45,7 @@ def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
 def create_valid(path: Path, body: bytes = b"payload") -> ArtifactHeader:
     with Procedure("create", "1").execute():
         writer = BytesArtifact.create(path)
-        writer.write_value(body)
+        writer.write(body)
     return decode_header(path.read_bytes())
 
 
@@ -69,7 +69,7 @@ def test_valid_artifact_and_untouched_round_trip(tmp_path: Path) -> None:
 
     with Procedure("read", "1").execute():
         reader = BytesArtifact.open(path)
-        assert reader.read_value() == b"complete"
+        assert reader.read() == b"complete"
         assert reader.metadata == expected_header
 
 
@@ -184,9 +184,9 @@ def test_detects_corruption_after_seek_and_backpatch(tmp_path: Path) -> None:
     path = tmp_path / "backpatch.pa"
     with Procedure("create", "1").execute():
         writer = BytesArtifact.create(path)
-        writer.write_value(b"0000payload")
+        writer.write(b"0000payload")
         writer.body.seek(0)
-        writer.write_value(b"0011")
+        writer.write(b"0011")
 
     header = decode_header(path.read_bytes())
     data = bytearray(path.read_bytes())
