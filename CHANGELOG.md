@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.3.0...provium-v0.4.0) (2026-08-13)
+
+
+### Features
+
+* Add sessions ([9bf8c88](https://github.com/SirDavidLudwig/provium/commit/9bf8c8850d97fe54f641be6d3fc49b695e9688d0))
+
 ## [0.3.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.2.0...provium-v0.3.0) (2026-08-13)
 
 
