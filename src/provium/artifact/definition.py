@@ -6,7 +6,7 @@ from collections.abc import Callable
 from os import PathLike
 from typing import Any, ClassVar, cast, overload
 
-from ..context import current_context
+from ..context import current_context, current_execution_context
 from .reader import ArtifactReader
 from .writer import ArtifactWriter
 
@@ -69,7 +69,9 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
     def open(cls, path: str | PathLike[str]) -> ReaderT:
         context = current_context()
         if context is None:
-            raise RuntimeError("artifact I/O requires an active execution context")
+            raise RuntimeError(
+                "artifact opening requires an active session or execution context"
+            )
         opener = getattr(context, "open_artifact", None)
         if not callable(opener):
             raise TypeError("active context does not support artifact opening")
@@ -77,9 +79,9 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
 
     @classmethod
     def create(cls, path: str | PathLike[str]) -> WriterT:
-        context = current_context()
+        context = current_execution_context() or current_context()
         if context is None:
-            raise RuntimeError("artifact I/O requires an active execution context")
+            raise RuntimeError("artifact creation requires an active execution context")
         creator = getattr(context, "create_artifact", None)
         if not callable(creator):
             raise TypeError("active context does not support artifact creating")
@@ -117,7 +119,9 @@ def open_artifact(
     """Open an artifact whose concrete type will be discovered from its header."""
     context = current_context()
     if context is None:
-        raise RuntimeError("artifact I/O requires an active execution context")
+        raise RuntimeError(
+            "artifact opening requires an active session or execution context"
+        )
     opener = getattr(context, "open_unknown_artifact", None)
     if not callable(opener):
         raise TypeError("active context does not support artifact opening")

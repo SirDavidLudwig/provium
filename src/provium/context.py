@@ -7,7 +7,12 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 
 _active_context: ContextVar[object | None] = ContextVar(
-    "provium_active_execution_context",
+    "provium_active_session",
+    default=None,
+)
+
+_active_execution: ContextVar[object | None] = ContextVar(
+    "provium_active_execution",
     default=None,
 )
 
@@ -27,6 +32,19 @@ def reset_context(token: Token[object | None]) -> None:
     _active_context.reset(token)
 
 
+def current_execution_context() -> object | None:
+    """Return the active procedure execution in this logical context."""
+    return _active_execution.get()
+
+
+def set_execution_context(owner: object) -> Token[object | None]:
+    return _active_execution.set(owner)
+
+
+def reset_execution_context(token: Token[object | None]) -> None:
+    _active_execution.reset(token)
+
+
 @contextmanager
 def activate_context(owner: object) -> Generator[None]:
     """Activate an owner temporarily, restoring the previous owner on exit."""
@@ -37,4 +55,12 @@ def activate_context(owner: object) -> Generator[None]:
         reset_context(token)
 
 
-__all__ = ["activate_context", "current_context", "reset_context", "set_context"]
+__all__ = [
+    "activate_context",
+    "current_context",
+    "current_execution_context",
+    "reset_context",
+    "reset_execution_context",
+    "set_context",
+    "set_execution_context",
+]

@@ -16,6 +16,7 @@ from .provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
+from .session import Session, current_session, session
 
 __version__ = version("provium")
 
@@ -39,11 +40,14 @@ __all__ = [
     "Procedure",
     "ProcedureExecutionRecord",
     "ProcedureRecord",
+    "Session",
     "__version__",
     "decode_header",
     "discover_catalogs",
     "encode_header",
     "current_execution",
+    "current_session",
     "open_artifact",
     "reset_discovery",
+    "session",
 ]

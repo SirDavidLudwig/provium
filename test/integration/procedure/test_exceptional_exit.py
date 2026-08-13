@@ -132,3 +132,18 @@ def test_failure_restores_context_for_later_execution(tmp_path: Path) -> None:
 
     with Procedure("later", "1").execute() as later:
         assert current_execution() is later
+
+
+def test_failure_cleanup_tolerates_writer_close_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(RuntimeError, match="original failure"):
+        with Procedure("fail", "1").execute():
+            writer = BytesArtifact.create(tmp_path / "failed.pa")
+
+            def broken_close() -> None:
+                raise OSError("cleanup failure")
+
+            monkeypatch.setattr(writer, "close", broken_close)
+            monkeypatch.setattr(writer._body, "close", broken_close)
+            raise RuntimeError("original failure")
