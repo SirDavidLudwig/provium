@@ -8,6 +8,8 @@ from ..provenance import ArtifactLineage
 from .header import ArtifactHeader
 from .region import BodyRegion
 
+INSPECTION_UNAVAILABLE = object()
+
 
 class ArtifactReader:
     """Own metadata and bounded body access for a concrete artifact reader."""
@@ -48,6 +50,10 @@ class ArtifactReader:
     def close(self) -> None:
         self._body.close()
 
+    def inspect(self) -> object:
+        """Return a value describing the artifact body for human inspection."""
+        return INSPECTION_UNAVAILABLE
+
     def __enter__(self) -> Self:
         self._body.check_access()
         return self
@@ -56,4 +62,4 @@ class ArtifactReader:
         self.close()
 
 
-__all__ = ["ArtifactReader"]
+__all__ = ["ArtifactReader", "INSPECTION_UNAVAILABLE"]

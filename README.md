@@ -293,6 +293,13 @@ type:
 provium inspect result.pa
 ```
 
+Pass `--body` to include artifact-specific body inspection when the artifact
+type is installed and its reader provides an inspector:
+
+```bash
+provium inspect --body result.pa
+```
+
 Generate Mermaid or Graphviz source for an artifact's complete lineage:
 
 ```bash

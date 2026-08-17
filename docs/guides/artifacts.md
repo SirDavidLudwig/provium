@@ -18,6 +18,9 @@ class IntegerReader(ArtifactReader):
     def read(self) -> int:
         return INTEGER.unpack(self.body.read(INTEGER.size))[0]
 
+    def inspect(self) -> object:
+        return {"value": self.read()}
+
 
 class IntegerWriter(ArtifactWriter):
     def write(self, value: int) -> None:
@@ -30,6 +33,9 @@ class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
 ```
 
 Typed calls such as `IntegerArtifact.open()` can read these artifacts directly.
+The optional `inspect()` method supplies body details for `provium inspect
+--body`. Its return value is rendered as JSON when possible, with unsupported
+objects represented using `repr()`.
 
 ## Register a stable identifier
 
