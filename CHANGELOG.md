@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.4.0...provium-v0.5.0) (2026-08-17)
+
+
+### Features
+
+* Add body inspection capability to artifacts ([02e8744](https://github.com/SirDavidLudwig/provium/commit/02e87445798c8a7220f22bcfa6de13bb079d54df))
+* Add load and dump capability to artifacts. ([af7a320](https://github.com/SirDavidLudwig/provium/commit/af7a320238d4ffe61e4db80132179c528bb01313))
+* Add persistent procedures. ([dd57372](https://github.com/SirDavidLudwig/provium/commit/dd57372068d39526c85e2dcf2fddd688c6895bde))
+
 ## [0.4.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.3.0...provium-v0.4.0) (2026-08-13)
 
 
