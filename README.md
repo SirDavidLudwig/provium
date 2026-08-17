@@ -1,5 +1,7 @@
 # Provium
 
+[![codecov](https://codecov.io/gh/SirDavidLudwig/provium/graph/badge.svg)](https://codecov.io/gh/SirDavidLudwig/provium)
+
 Provium helps you build processing workflows whose results explain where they
 came from. Store a result as an artifact, use that artifact as input to another
 step, and save the new outputs as artifacts of their own. Provium records those
