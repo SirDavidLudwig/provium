@@ -17,6 +17,9 @@ class JsonArtifactReader(ArtifactReader):
         value = json.loads(self.body.read().decode("utf-8"))
         return normalize_json_value(value)
 
+    def inspect(self) -> JsonValue:
+        return self.read()
+
 
 class JsonArtifactWriter(ArtifactWriter):
     """Write one generic JSON value using deterministic UTF-8 encoding."""

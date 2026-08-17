@@ -1,19 +1,50 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import io
 from pathlib import Path
 
+import pytest
+
 from provium import (
+    Artifact,
+    ArtifactCatalog,
     ArtifactHeader,
     ArtifactLineage,
+    ArtifactReader,
     ArtifactRecord,
     ArtifactReference,
+    ArtifactWriter,
     ProcedureExecutionRecord,
     ProcedureRecord,
     encode_header,
 )
 from provium.cli.application import run
+from provium.cli.commands.inspect import _render_inspection
+
+
+class InspectingReader(ArtifactReader):
+    def inspect(self) -> object:
+        return {"summary": "hello", "custom": object()}
+
+
+class PlainReader(ArtifactReader):
+    pass
+
+
+class Writer(ArtifactWriter):
+    pass
+
+
+class InspectingArtifact(Artifact[InspectingReader, Writer]):
+    reader = InspectingReader
+    writer = Writer
+
+
+class PlainArtifact(Artifact[PlainReader, Writer]):
+    reader = PlainReader
+    writer = Writer
 
 
 def write_artifact(path: Path, body: bytes = b"hello") -> ArtifactHeader:
@@ -104,3 +135,68 @@ def test_inspect_uses_plural_lineage_labels(tmp_path: Path) -> None:
 
     assert run(["inspect", str(path)], stdout=stdout, stderr=io.StringIO()) == 0
     assert "Lineage: 2 artifacts, 2 executions\n" in stdout.getvalue()
+
+
+def test_inspect_body_reports_an_unlocated_artifact_type(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.pa"
+    write_artifact(path)
+    stdout = io.StringIO()
+
+    result = run(["inspect", "--body", str(path)], stdout=stdout, stderr=io.StringIO())
+
+    assert result == 0
+    assert stdout.getvalue().endswith(
+        "\nBody inspection unavailable: artifact type could not be located.\n"
+    )
+
+
+def test_inspect_body_reports_a_missing_inspector(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "artifact.pa"
+    write_artifact(path)
+    catalog = ArtifactCatalog()
+    catalog.register("example.BytesV1", PlainArtifact)
+    monkeypatch.setattr(
+        "provium.cli.commands.inspect.discover_catalogs", lambda: catalog
+    )
+    session_module = importlib.import_module("provium.session")
+    monkeypatch.setattr(session_module, "discover_catalogs", lambda: catalog)
+    stdout = io.StringIO()
+
+    result = run(["inspect", "--body", str(path)], stdout=stdout, stderr=io.StringIO())
+
+    assert result == 0
+    assert stdout.getvalue().endswith(
+        "\nBody inspection unavailable: artifact type does not provide an inspector.\n"
+    )
+
+
+def test_inspect_body_renders_the_reader_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "artifact.pa"
+    write_artifact(path)
+    catalog = ArtifactCatalog()
+    catalog.register("example.BytesV1", InspectingArtifact)
+    monkeypatch.setattr(
+        "provium.cli.commands.inspect.discover_catalogs", lambda: catalog
+    )
+    session_module = importlib.import_module("provium.session")
+    monkeypatch.setattr(session_module, "discover_catalogs", lambda: catalog)
+    stdout = io.StringIO()
+
+    result = run(["inspect", "--body", str(path)], stdout=stdout, stderr=io.StringIO())
+
+    assert result == 0
+    assert (
+        '\nInspected body:\n{\n  "summary": "hello",\n  "custom": "<object object at '
+        in stdout.getvalue()
+    )
+
+
+def test_inspection_rendering_falls_back_to_repr_for_a_cycle() -> None:
+    value: list[object] = []
+    value.append(value)
+
+    assert _render_inspection(value) == "[[...]]"

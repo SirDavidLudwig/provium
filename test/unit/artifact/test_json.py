@@ -36,6 +36,8 @@ def test_json_artifact_round_trips_generic_json_without_registration(
         reader = JsonArtifact.open(path)
         assert isinstance(reader, JsonArtifactReader)
         assert reader.read() == value
+        inspector = JsonArtifact.open(path)
+        assert inspector.inspect() == value
 
     header = decode_header(path.read_bytes())
     assert header.artifact_identifier == (

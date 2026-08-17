@@ -10,6 +10,14 @@ Display an artifact's metadata and lineage:
 provium inspect result.pa
 ```
 
+Use `--body` to request artifact-specific body details. Body inspection is
+reported as unavailable when the artifact type cannot be discovered or its
+reader does not provide an inspector:
+
+```bash
+provium inspect --body result.pa
+```
+
 ## Render a provenance graph
 
 Write a Mermaid graph definition:
