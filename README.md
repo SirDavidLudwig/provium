@@ -1,5 +1,7 @@
 # Provium
 
+[![PyPI](https://img.shields.io/pypi/v/provium.svg)](https://pypi.org/project/provium/)
+[![Tests](https://github.com/SirDavidLudwig/provium/actions/workflows/test.yml/badge.svg)](https://github.com/SirDavidLudwig/provium/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/SirDavidLudwig/provium/graph/badge.svg)](https://codecov.io/gh/SirDavidLudwig/provium)
 
 [Documentation](https://sirdavidludwig.github.io/provium/) ·
