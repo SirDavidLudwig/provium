@@ -7,6 +7,7 @@ from .header import ArtifactHeader, decode_header, encode_header
 from .prefab import JsonArtifact, JsonArtifactReader, JsonArtifactWriter
 from .reader import ArtifactReader
 from .region import BodyRegion
+from .transfer import dump_artifact, import_artifact, inspect_dump, verify_dump
 from .writer import ArtifactWriter
 
 __all__ = [
@@ -23,6 +24,10 @@ __all__ = [
     "decode_header",
     "discover_catalogs",
     "encode_header",
+    "dump_artifact",
+    "import_artifact",
+    "inspect_dump",
     "open_artifact",
     "reset_discovery",
+    "verify_dump",
 ]
