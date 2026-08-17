@@ -26,7 +26,7 @@ from .header import ArtifactHeader, decode_header, encode_header
 from .region import BodyRegion
 
 Representation = Literal["auto", "custom", "raw"]
-ImportMode = Literal["exact", "derived", "root"]
+LoadMode = Literal["exact", "derived", "root"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ class DumpResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ImportResult:
+class LoadResult:
     destination: Path
     integrity: Literal["exact", "modified"]
     identity_preserved: bool
@@ -284,7 +284,7 @@ def _write_container(
 
 
 def _changed_header(
-    original: ArtifactHeader, body: bytes, mode: ImportMode
+    original: ArtifactHeader, body: bytes, mode: LoadMode
 ) -> ArtifactHeader:
     reference = ArtifactReference(str(uuid4()), original.artifact_identifier)
     execution_identity = str(uuid4())
@@ -292,7 +292,7 @@ def _changed_header(
         original.artifact_identity, original.artifact_identifier
     )
     procedure = ProcedureRecord(
-        "provium.import" if mode == "derived" else "provium.unsafe-import", "1"
+        "provium.load" if mode == "derived" else "provium.unsafe-load", "1"
     )
     execution = ProcedureExecutionRecord(
         execution_identity,
@@ -316,17 +316,17 @@ def _changed_header(
     )
 
 
-def import_artifact(
+def load_artifact(
     source: str | Path,
     destination: str | Path,
     *,
-    mode: ImportMode = "exact",
+    mode: LoadMode = "exact",
     representation: Representation = "auto",
     overwrite: bool = False,
-) -> ImportResult:
-    """Import a dump, preserving identity unless modified content is allowed."""
+) -> LoadResult:
+    """Load a dump, preserving identity unless modified content is allowed."""
     if mode not in {"exact", "derived", "root"}:
-        raise ValueError(f"invalid import mode: {mode}")
+        raise ValueError(f"invalid load mode: {mode}")
     source_path, destination_path = Path(source), Path(destination)
     verification = verify_dump(source_path)
     if not verification.valid:
@@ -343,25 +343,25 @@ def import_artifact(
     original = _manifest_header(manifest)
     exact = _digest(body) == original.body_digest and len(body) == original.body_length
     if not exact and mode == "exact":
-        raise ValueError("imported body differs from the original artifact")
+        raise ValueError("loaded body differs from the original artifact")
     header = original if exact else _changed_header(original, body, mode)
     _write_container(destination_path, header, body, overwrite)
     manifest["events"].append(
-        _event("import", mode=mode, integrity="exact" if exact else "modified")
+        _event("load", mode=mode, integrity="exact" if exact else "modified")
     )
     (source_path / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
-    return ImportResult(destination_path, "exact" if exact else "modified", exact)
+    return LoadResult(destination_path, "exact" if exact else "modified", exact)
 
 
 __all__ = [
     "DumpInfo",
     "DumpResult",
-    "ImportResult",
+    "LoadResult",
     "VerificationResult",
     "dump_artifact",
-    "import_artifact",
+    "load_artifact",
     "inspect_dump",
     "verify_dump",
 ]

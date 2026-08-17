@@ -82,7 +82,7 @@ def test_public_argument_validation(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="representation"):
         transfer.dump_artifact("missing", tmp_path, representation="bad")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="mode"):
-        transfer.import_artifact(tmp_path, "output", mode="bad")  # type: ignore[arg-type]
+        transfer.load_artifact(tmp_path, "output", mode="bad")  # type: ignore[arg-type]
 
 
 def test_container_validation_and_missing_registration(

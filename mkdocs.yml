@@ -32,7 +32,7 @@ nav:
   - Guides:
       - Artifacts: guides/artifacts.md
       - Procedures and provenance: guides/procedures.md
-      - Dumping and importing: guides/transfers.md
+      - Dumping and loading: guides/transfers.md
       - Command-line tools: guides/cli.md
   - API reference: reference/api.md
 

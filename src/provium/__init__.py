@@ -9,11 +9,11 @@ from .artifact.reader import ArtifactReader
 from .artifact.transfer import (
     DumpInfo,
     DumpResult,
-    ImportResult,
+    LoadResult,
     VerificationResult,
     dump_artifact,
-    import_artifact,
     inspect_dump,
+    load_artifact,
     verify_dump,
 )
 from .artifact.writer import ArtifactWriter
@@ -45,7 +45,7 @@ __all__ = [
     "ExecutionContext",
     "DumpInfo",
     "DumpResult",
-    "ImportResult",
+    "LoadResult",
     "JsonValue",
     "JsonArtifact",
     "JsonArtifactReader",
@@ -64,8 +64,8 @@ __all__ = [
     "current_execution",
     "current_session",
     "open_artifact",
-    "import_artifact",
     "inspect_dump",
+    "load_artifact",
     "reset_discovery",
     "session",
     "verify_dump",

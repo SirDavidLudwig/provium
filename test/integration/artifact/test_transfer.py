@@ -14,8 +14,8 @@ from provium import (
     Procedure,
     decode_header,
     dump_artifact,
-    import_artifact,
     inspect_dump,
+    load_artifact,
     verify_dump,
 )
 
@@ -85,13 +85,13 @@ def test_custom_dump_and_exact_import_preserve_artifact(tmp_path: Path) -> None:
     assert (package / "payload" / "text.txt").read_text() == "hello"
     assert not (package / "body.dat").exists()
 
-    imported = import_artifact(package, restored)
-    assert imported.integrity == "exact"
-    assert imported.identity_preserved
+    loaded = load_artifact(package, restored)
+    assert loaded.integrity == "exact"
+    assert loaded.identity_preserved
     assert restored.read_bytes() == source.read_bytes()
     assert [event["kind"] for event in inspect_dump(package).events] == [
         "dump",
-        "import",
+        "load",
     ]
 
 
@@ -106,7 +106,7 @@ def test_raw_fallback_and_forced_modes(tmp_path: Path) -> None:
     assert verify_dump(package).valid
 
     with pytest.raises(ValueError, match="not custom"):
-        import_artifact(
+        load_artifact(
             package,
             tmp_path / "wrong.pa",
             representation="custom",
@@ -132,28 +132,28 @@ def test_modified_custom_import_requires_policy(tmp_path: Path) -> None:
     (package / "manifest.json").write_text(json.dumps(manifest))
 
     with pytest.raises(ValueError, match="differs"):
-        import_artifact(package, tmp_path / "rejected.pa")
+        load_artifact(package, tmp_path / "rejected.pa")
 
     derived_path = tmp_path / "derived.pa"
-    derived = import_artifact(package, derived_path, mode="derived")
+    derived = load_artifact(package, derived_path, mode="derived")
     derived_header = decode_header(derived_path.read_bytes())
     assert derived.integrity == "modified"
     assert not derived.identity_preserved
     assert derived_header.artifact_identity != original.artifact_identity
     assert any(
-        execution.procedure.name == "provium.import"
+        execution.procedure.name == "provium.load"
         for execution in derived_header.lineage.executions.values()
     )
 
     root_path = tmp_path / "root.pa"
-    import_artifact(package, root_path, mode="root")
+    load_artifact(package, root_path, mode="root")
     root_header = decode_header(root_path.read_bytes())
     assert len(root_header.lineage.artifacts) == 1
     assert (
         root_header.lineage.producing_execution(
             next(iter(root_header.lineage.artifacts.values())).reference
         ).procedure.name
-        == "provium.unsafe-import"
+        == "provium.unsafe-load"
     )
 
 
@@ -172,4 +172,4 @@ def test_dump_verification_detects_changes_and_destination_rules(
     assert not result.valid
     assert result.errors
     with pytest.raises(ValueError, match="verification"):
-        import_artifact(package, tmp_path / "bad.pa")
+        load_artifact(package, tmp_path / "bad.pa")

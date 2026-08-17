@@ -6,7 +6,7 @@ from pathlib import Path
 from provium.artifact.transfer import (
     DumpInfo,
     DumpResult,
-    ImportResult,
+    LoadResult,
     VerificationResult,
 )
 from provium.cli.application import run
@@ -24,7 +24,7 @@ def invoke(arguments: list[str]) -> tuple[int, str, str]:
     return status, stdout.getvalue(), stderr.getvalue()
 
 
-def test_dump_and_import_commands(monkeypatch, tmp_path: Path) -> None:
+def test_dump_and_load_commands(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "provium.cli.commands.artifact.dump_artifact",
         lambda *args, **kwargs: DumpResult(tmp_path / "dump", "raw", {}),
@@ -36,12 +36,10 @@ def test_dump_and_import_commands(monkeypatch, tmp_path: Path) -> None:
     assert "raw package" in stdout
 
     monkeypatch.setattr(
-        "provium.cli.commands.artifact.import_artifact",
-        lambda *args, **kwargs: ImportResult(tmp_path / "output.pa", "exact", True),
+        "provium.cli.commands.artifact.load_artifact",
+        lambda *args, **kwargs: LoadResult(tmp_path / "output.pa", "exact", True),
     )
-    status, stdout, _ = invoke(
-        ["artifact", "import", "dump", "output.pa", "--overwrite"]
-    )
+    status, stdout, _ = invoke(["artifact", "load", "dump", "output.pa", "--overwrite"])
     assert status == 0
     assert "exact artifact" in stdout
 

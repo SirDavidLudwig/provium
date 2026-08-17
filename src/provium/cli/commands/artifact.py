@@ -1,4 +1,4 @@
-"""Dump, import, inspect, and verify portable artifact packages."""
+"""Dump, load, inspect, and verify portable artifact packages."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 from provium.artifact.transfer import (
     dump_artifact,
-    import_artifact,
     inspect_dump,
+    load_artifact,
     verify_dump,
 )
 
@@ -31,7 +31,7 @@ class ArtifactCommand:
         )
         dump.add_argument("--overwrite", action="store_true")
 
-        load = commands.add_parser("import")
+        load = commands.add_parser("load")
         load.add_argument("source", type=Path)
         load.add_argument("destination", type=Path)
         load.add_argument(
@@ -60,8 +60,8 @@ class ArtifactCommand:
                 file=context.stdout,
             )
             return 0
-        if arguments.artifact_command == "import":
-            result = import_artifact(
+        if arguments.artifact_command == "load":
+            result = load_artifact(
                 arguments.source,
                 arguments.destination,
                 mode=arguments.mode,
@@ -69,7 +69,7 @@ class ArtifactCommand:
                 overwrite=arguments.overwrite,
             )
             print(
-                f"Imported {result.integrity} artifact to {result.destination}",
+                f"Loaded {result.integrity} artifact to {result.destination}",
                 file=context.stdout,
             )
             return 0
