@@ -166,6 +166,116 @@ def test_sessions_are_single_use_and_require_matching_context() -> None:
         session().__enter__()
 
 
+def test_configured_procedure_lazily_reuses_setup_with_isolated_inputs(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.pa"
+    first_data_path = tmp_path / "first-data.pa"
+    second_data_path = tmp_path / "second-data.pa"
+    first_output = tmp_path / "first-output.pa"
+    second_output = tmp_path / "second-output.pa"
+    model_identity = create_bytes(model_path, b"model")
+    first_data_identity = create_bytes(first_data_path, b"one")
+    second_data_identity = create_bytes(second_data_path, b"two")
+    setup_calls = 0
+
+    def setup(_: None) -> BytesReader:
+        nonlocal setup_calls
+        setup_calls += 1
+        return BytesArtifact.open(model_path)
+
+    predict = Procedure("predict", "1", setup=setup)(config=None)
+    assert setup_calls == 0
+
+    with session():
+        for data_path, output_path in (
+            (first_data_path, first_output),
+            (second_data_path, second_output),
+        ):
+            with predict as execution:
+                execution.state.body.seek(0)
+                data = BytesArtifact.open(data_path).read()
+                writer = BytesArtifact.create(output_path)
+                writer.write(execution.state.read() + data)
+
+        assert setup_calls == 1
+        setup_reader = predict.state
+        assert not setup_reader.closed
+
+    assert setup_reader.closed
+    with pytest.raises(RuntimeError, match="closed session"):
+        predict.state
+
+    first_lineage = decode_header(first_output.read_bytes()).lineage
+    second_lineage = decode_header(second_output.read_bytes()).lineage
+    first_execution = first_lineage.producing_execution(
+        first_lineage.artifacts[
+            decode_header(first_output.read_bytes()).artifact_identity
+        ].reference
+    )
+    second_execution = second_lineage.producing_execution(
+        second_lineage.artifacts[
+            decode_header(second_output.read_bytes()).artifact_identity
+        ].reference
+    )
+    assert {item.identity for item in first_execution.inputs} == {
+        model_identity,
+        first_data_identity,
+    }
+    assert {item.identity for item in second_execution.inputs} == {
+        model_identity,
+        second_data_identity,
+    }
+
+
+def test_prepared_procedure_is_bound_to_its_first_session(tmp_path: Path) -> None:
+    model_path = tmp_path / "model.pa"
+    create_bytes(model_path, b"model")
+    predict = Procedure("predict", "1", setup=lambda _: BytesArtifact.open(model_path))(
+        config=None
+    )
+
+    with session():
+        with predict:
+            pass
+
+    with session(), pytest.raises(RuntimeError, match="closed session"):
+        with predict:
+            pass
+
+
+def test_multiple_prepared_procedures_share_one_owning_session(
+    tmp_path: Path,
+) -> None:
+    first_path = tmp_path / "first.pa"
+    second_path = tmp_path / "second.pa"
+    create_bytes(first_path, b"first")
+    create_bytes(second_path, b"second")
+    first = Procedure("first", "1", setup=lambda _: BytesArtifact.open(first_path))()
+    second = Procedure("second", "1", setup=lambda _: BytesArtifact.open(second_path))()
+
+    with session():
+        with first as execution:
+            first_reader = execution.state
+            assert first_reader.read() == b"first"
+        with second as execution:
+            second_reader = execution.state
+            assert second_reader.read() == b"second"
+        with first as execution:
+            execution.state.body.seek(0)
+            assert execution.state.read() == b"first"
+
+    assert first_reader.closed and second_reader.closed
+
+
+def test_setup_requires_an_explicit_session() -> None:
+    prepared = Procedure("prepared", "1", setup=lambda _: object())(config=None)
+
+    with pytest.raises(RuntimeError, match="active session"):
+        with prepared:
+            pass
+
+
 def test_session_closes_every_reader_and_reports_cleanup_failure() -> None:
     class BrokenBody:
         def close(self) -> None:
@@ -181,4 +291,20 @@ def test_session_closes_every_reader_and_reports_cleanup_failure() -> None:
     active.__enter__()
     active._readers.extend((BrokenReader(), BrokenReader()))  # type: ignore[arg-type]
     with pytest.raises(OSError, match="reader cleanup failed"):
+        active.__exit__(None, None, None)
+
+
+def test_session_closes_managed_resources_and_reports_cleanup_failure() -> None:
+    class BrokenResource:
+        def close(self) -> None:
+            raise OSError("managed cleanup failed")
+
+    active = session()
+    with pytest.raises(RuntimeError, match="active session"):
+        active._manage(BrokenResource())
+
+    active.__enter__()
+    active._manage(BrokenResource())
+    active._manage(BrokenResource())
+    with pytest.raises(OSError, match="managed cleanup failed"):
         active.__exit__(None, None, None)

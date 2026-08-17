@@ -232,8 +232,49 @@ with session():
 Each result depends on the shared model and its own data artifact. Nested
 generic sessions similarly inherit artifacts recorded by their ancestors.
 
-Calling a procedure is shorthand for `execute()`, including configured
-executions: `with PREDICT(config=settings): ...`.
+Calling a procedure creates a lazy, configured procedure instance. The instance
+can be entered repeatedly inside one session; every entry is a fresh execution.
+A setup callback can load shared state once and keep its input artifacts open
+until the owning session exits:
+
+```python
+from dataclasses import dataclass
+
+from provium import Procedure, session
+
+
+@dataclass
+class PredictState:
+    model: object
+
+
+def setup_predict(settings: Settings) -> PredictState:
+    reader = ModelArtifact.open(settings.model_path)
+    return PredictState(model=load_model(reader))
+
+
+PREDICT = Procedure(
+    name="predict",
+    version="1",
+    config_codec=SettingsCodec(),
+    setup=setup_predict,
+)
+
+predict = PREDICT(config=settings)  # Setup remains lazy here.
+
+with session():
+    for input_path, output_path in jobs:
+        with predict as execution:
+            data = DataArtifact.open(input_path)
+            result = execution.state.model.predict(data.read())
+            ResultArtifact.create(output_path).write(result)
+```
+
+The model is included in every execution's provenance, while each data input is
+local to only its own execution. The configured instance is permanently bound
+to the session where setup first runs and cannot be reused after that session
+closes. Use `execute()` when an explicit standalone, single-use execution
+context is needed.
 
 ## Command-line tools
 
