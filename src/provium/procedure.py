@@ -9,6 +9,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
+from types import GenericAlias
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
@@ -88,7 +89,7 @@ class Procedure[ConfigT, StateT]:
         """Default legacy one-argument annotations to no setup state."""
         if not isinstance(parameters, tuple):
             parameters = (parameters, None)
-        return super(Procedure, cls).__class_getitem__(parameters)
+        return GenericAlias(cls, parameters)
 
     def __post_init__(self) -> None:
         _require_text(self.name, "name")

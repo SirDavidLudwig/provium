@@ -10,7 +10,7 @@ from contextvars import Token
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .artifact.catalog import ArtifactRegistration
 from .artifact.definition import artifact_class_identifier
@@ -187,7 +187,10 @@ class Session:
                 raise ValueError(  # noqa: TRY301
                     f"unknown artifact identifier: {header.artifact_identifier}"
                 )
-            if expected is not None and registration.artifact not in expected:
+            if (
+                expected is not None
+                and cast(ArtifactRegistration, registration).artifact not in expected
+            ):
                 raise TypeError(  # noqa: TRY301
                     "artifact is outside the expected artifact types"
                 )
@@ -223,7 +226,10 @@ class Session:
                 raise ValueError(  # noqa: TRY301
                     "artifact lineage body digest does not match header"
                 )
-            concrete_reader = reader_type or registration.artifact._resolve_reader()
+            concrete_reader = (
+                reader_type
+                or cast(ArtifactRegistration, registration).artifact._resolve_reader()
+            )
             region = BodyRegion(
                 stream, header.body_offset, header.body_length, self, close_stream=True
             )
