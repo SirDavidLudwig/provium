@@ -6,6 +6,16 @@ from .artifact.discovery import discover_catalogs, reset_discovery
 from .artifact.header import ArtifactHeader, decode_header, encode_header
 from .artifact.prefab import JsonArtifact, JsonArtifactReader, JsonArtifactWriter
 from .artifact.reader import ArtifactReader
+from .artifact.transfer import (
+    DumpInfo,
+    DumpResult,
+    LoadResult,
+    VerificationResult,
+    dump_artifact,
+    inspect_dump,
+    load_artifact,
+    verify_dump,
+)
 from .artifact.writer import ArtifactWriter
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
 from .procedure import ExecutionContext, Procedure, ProcedureInstance, current_execution
@@ -33,6 +43,9 @@ __all__ = [
     "ConfigCodec",
     "ConfigurationSnapshot",
     "ExecutionContext",
+    "DumpInfo",
+    "DumpResult",
+    "LoadResult",
     "JsonValue",
     "JsonArtifact",
     "JsonArtifactReader",
@@ -42,13 +55,18 @@ __all__ = [
     "ProcedureInstance",
     "ProcedureRecord",
     "Session",
+    "VerificationResult",
     "__version__",
     "decode_header",
+    "dump_artifact",
     "discover_catalogs",
     "encode_header",
     "current_execution",
     "current_session",
     "open_artifact",
+    "inspect_dump",
+    "load_artifact",
     "reset_discovery",
     "session",
+    "verify_dump",
 ]

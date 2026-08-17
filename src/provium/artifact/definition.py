@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from os import PathLike
+from pathlib import Path
 from typing import Any, ClassVar, cast, overload
 
 from ..context import current_context, current_execution_context
@@ -86,6 +87,16 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
         if not callable(creator):
             raise TypeError("active context does not support artifact creating")
         return cast(WriterT, creator(cls, path, cls._resolve_writer()))
+
+    @classmethod
+    def dump(cls, reader: ReaderT, destination: Path) -> None:
+        """Dump a reader into a custom portable representation."""
+        raise NotImplementedError("custom dump is not supported")
+
+    @classmethod
+    def load(cls, source: Path, writer: WriterT) -> None:
+        """Load a custom portable representation into a writer."""
+        raise NotImplementedError("custom load is not supported")
 
 
 __all__ = ["Artifact", "artifact_class_identifier"]
