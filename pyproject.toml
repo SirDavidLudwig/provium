@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "provium"
 version = "0.4.0"
-description = "Typed binary artifacts with automatic provenance"
+description = "Typed artifacts with automatic provenance"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -34,6 +34,10 @@ test = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.16",
+]
+docs = [
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.30",
 ]
 
 [tool.setuptools.packages.find]

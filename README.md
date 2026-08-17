@@ -2,6 +2,10 @@
 
 [![codecov](https://codecov.io/gh/SirDavidLudwig/provium/graph/badge.svg)](https://codecov.io/gh/SirDavidLudwig/provium)
 
+[Documentation](https://sirdavidludwig.github.io/provium/) ·
+[PyPI](https://pypi.org/project/provium/) ·
+[Issues](https://github.com/SirDavidLudwig/provium/issues)
+
 Provium helps you build processing workflows whose results explain where they
 came from. Store a result as an artifact, use that artifact as input to another
 step, and save the new outputs as artifacts of their own. Provium records those
@@ -20,10 +24,10 @@ artifacts for you.
 
 ## Features
 
-- Typed readers and writers for application-specific binary formats
+- Typed readers and writers for application-specific artifact formats
 - Automatic input, output, and procedure lineage
 - SHA-256 payload integrity checks
-- Streaming, body-relative binary I/O
+- Streaming, body-relative I/O
 - Runtime artifact discovery through Python entry points
 - Optional configuration snapshots, including Pydantic v2 models
 - No required runtime dependencies
@@ -97,7 +101,7 @@ booleans, finite numbers, strings, arrays, and objects with string keys.
 
 ## Custom artifact types
 
-For an application-specific binary format, define reader, writer, and artifact
+For an application-specific artifact format, define reader, writer, and artifact
 classes. Here is the same number workflow using signed 64-bit integers:
 
 ```python
