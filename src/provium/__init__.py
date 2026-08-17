@@ -8,7 +8,7 @@ from .artifact.prefab import JsonArtifact, JsonArtifactReader, JsonArtifactWrite
 from .artifact.reader import ArtifactReader
 from .artifact.writer import ArtifactWriter
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
-from .procedure import ExecutionContext, Procedure, current_execution
+from .procedure import ExecutionContext, Procedure, ProcedureInstance, current_execution
 from .provenance import (
     ArtifactLineage,
     ArtifactRecord,
@@ -39,6 +39,7 @@ __all__ = [
     "JsonArtifactWriter",
     "Procedure",
     "ProcedureExecutionRecord",
+    "ProcedureInstance",
     "ProcedureRecord",
     "Session",
     "__version__",

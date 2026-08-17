@@ -60,6 +60,7 @@ class Session:
     _input_lineage: ArtifactLineage = field(default_factory=ArtifactLineage)
     _input_registrations: list[ArtifactRegistration] = field(default_factory=list)
     _discover_catalogs: Callable[[], Any] | None = None
+    _managed_resources: list[Any] = field(default_factory=list)
 
     def __enter__(self) -> Session:
         if self._used:
@@ -79,6 +80,12 @@ class Session:
         token = self._token
         close_error: Exception | None = None
         try:
+            for resource in reversed(self._managed_resources):
+                try:
+                    resource.close()
+                except Exception as error:  # noqa: BLE001
+                    if close_error is None:
+                        close_error = error
             for reader in self._readers:
                 try:
                     reader.close()
@@ -95,6 +102,12 @@ class Session:
             reset_context(token)
         if exc_type is None and close_error is not None:
             raise close_error
+
+    def _manage(self, resource: Any) -> None:
+        """Register a resource whose lifetime is bounded by this session."""
+        if not self.active or current_context() is not self:
+            raise RuntimeError("managed resources require the active session")
+        self._managed_resources.append(resource)
 
     def _owns_active_context(self) -> bool:
         current = current_context()

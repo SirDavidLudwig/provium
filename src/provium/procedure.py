@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from os import PathLike
@@ -22,8 +23,11 @@ from .artifact.reader import ArtifactReader
 from .artifact.region import BodyRegion
 from .config import ConfigCodec, ConfigurationSnapshot, JsonValue
 from .context import (
+    current_context,
     current_execution_context,
+    reset_context,
     reset_execution_context,
+    set_context,
     set_execution_context,
 )
 from .provenance import (
@@ -71,12 +75,20 @@ def _pydantic_value(config: object) -> JsonValue | None:
 
 
 @dataclass(frozen=True, slots=True)
-class Procedure[ConfigT]:
+class Procedure[ConfigT, StateT]:
     """Immutable procedure identity and its optional configuration codec."""
 
     name: str
     version: str
     config_codec: ConfigCodec[ConfigT] | None = None
+    setup: Callable[[ConfigT], StateT] | None = None
+
+    @classmethod
+    def __class_getitem__(cls, parameters: Any) -> Any:
+        """Default legacy one-argument annotations to no setup state."""
+        if not isinstance(parameters, tuple):
+            parameters = (parameters, None)
+        return super(Procedure, cls).__class_getitem__(parameters)
 
     def __post_init__(self) -> None:
         _require_text(self.name, "name")
@@ -108,18 +120,27 @@ class Procedure[ConfigT]:
             raise ValueError("configuration snapshot codec identifier does not match")
         return self.config_codec.decode(snapshot.value)
 
-    def execute(self, *, config: ConfigT | None = None) -> ExecutionContext[ConfigT]:
+    def execute(
+        self, *, config: ConfigT | None = None
+    ) -> ExecutionContext[ConfigT, None]:
         return ExecutionContext(
             procedure=self,
             identity=str(uuid4()),
             config_snapshot=self.encode_config(config),
+            state=None,
         )
 
-    def __call__(self, *, config: ConfigT | None = None) -> ExecutionContext[ConfigT]:
-        """Create an execution context using the same interface as execute."""
-        return self.execute(config=config)
+    def __call__(
+        self, *, config: ConfigT | None = None
+    ) -> ProcedureInstance[ConfigT, StateT]:
+        """Create a lazy configured instance that can execute repeatedly."""
+        return ProcedureInstance(
+            procedure=self,
+            config=config,
+            config_snapshot=self.encode_config(config),
+        )
 
-    def __enter__(self) -> ExecutionContext[ConfigT]:
+    def __enter__(self) -> ExecutionContext[ConfigT, None]:
         """Enter a fresh unconfigured execution directly from the procedure."""
         execution = self.execute()
         entered = execution.__enter__()
@@ -138,12 +159,145 @@ class Procedure[ConfigT]:
 
 
 @dataclass(slots=True)
-class ExecutionContext[ConfigT]:
+class _PersistentSession(Session):
+    """A child session that deactivates without closing its readers."""
+
+    owner: Session = field(default=None)  # type: ignore[assignment]
+    closed: bool = False
+
+    def __enter__(self) -> _PersistentSession:
+        if self.closed:
+            raise RuntimeError("persistent session is closed")
+        if self.active:
+            raise RuntimeError("persistent session is already active")
+        if current_context() is not self.owner:
+            raise RuntimeError("persistent session requires its owning session")
+        self.parent = self.owner
+        self.active = True
+        self._token = set_context(self)
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        if not self.active or current_context() is not self or self._token is None:
+            raise RuntimeError("persistent session is not active")
+        token = self._token
+        self.active = False
+        self._token = None
+        reset_context(token)
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        if not self.active:
+            self.__enter__()
+        close_error: Exception | None = None
+        try:
+            for reader in self._readers:
+                try:
+                    reader.close()
+                except Exception as error:  # noqa: BLE001
+                    if close_error is None:
+                        close_error = error
+                    try:
+                        reader._body.close()
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+        finally:
+            self.__exit__(None, None, None)
+            self.closed = True
+        if close_error is not None:
+            raise close_error
+
+
+@dataclass(slots=True)
+class ProcedureInstance[ConfigT, StateT]:
+    """A lazy, session-bound procedure setup with repeatable executions."""
+
+    procedure: Procedure[ConfigT, StateT]
+    config: ConfigT | None
+    config_snapshot: ConfigurationSnapshot | None
+    _owner: Session | None = None
+    _setup_session: _PersistentSession | None = None
+    _state: StateT | None = None
+    _initialized: bool = False
+    _closed: bool = False
+    _execution: ExecutionContext[ConfigT, StateT] | None = None
+
+    @property
+    def state(self) -> StateT:
+        if self._closed:
+            raise RuntimeError("procedure instance belongs to a closed session")
+        if not self._initialized:
+            raise RuntimeError("procedure setup has not run")
+        return cast(StateT, self._state)
+
+    def __enter__(self) -> ExecutionContext[ConfigT, StateT]:
+        if self._closed:
+            raise RuntimeError("procedure instance belongs to a closed session")
+        if self._execution is not None:
+            raise RuntimeError("procedure instance is already executing")
+        if current_execution_context() is not None:
+            raise RuntimeError("nested procedure execution contexts are not allowed")
+        owner = current_session()
+        if owner is None:
+            raise RuntimeError("procedure setup requires an active session")
+        if self._owner is None:
+            self._owner = owner
+            self._setup_session = _PersistentSession(owner=owner)
+            owner._manage(self)
+        elif owner is not self._owner:
+            raise RuntimeError("procedure instance belongs to a different session")
+        assert self._setup_session is not None
+        self._setup_session.__enter__()
+        try:
+            if not self._initialized:
+                self._state = (
+                    None
+                    if self.procedure.setup is None
+                    else self.procedure.setup(cast(ConfigT, self.config))
+                )
+                self._initialized = True
+            execution = ExecutionContext(
+                procedure=self.procedure,
+                identity=str(uuid4()),
+                config_snapshot=self.config_snapshot,
+                state=cast(StateT, self._state),
+            )
+            self._execution = execution
+            return execution.__enter__()
+        except Exception:
+            self._setup_session.close()
+            self._closed = True
+            raise
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        execution = self._execution
+        if execution is None or self._setup_session is None:
+            raise RuntimeError("procedure instance is not executing")
+        try:
+            execution.__exit__(exc_type, exc_value, traceback)
+        finally:
+            self._execution = None
+            self._setup_session.__exit__(exc_type, exc_value, traceback)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        if self._execution is not None:
+            raise RuntimeError("cannot close an executing procedure instance")
+        if self._setup_session is not None:
+            self._setup_session.close()
+        self._closed = True
+
+
+@dataclass(slots=True)
+class ExecutionContext[ConfigT, StateT]:
     """One single-use, logically scoped execution of a procedure."""
 
-    procedure: Procedure[ConfigT]
+    procedure: Procedure[ConfigT, Any]
     identity: str
     config_snapshot: ConfigurationSnapshot | None
+    state: StateT
     active: bool = False
     _used: bool = False
     _token: Token[object | None] | None = None
@@ -180,7 +334,7 @@ class ExecutionContext[ConfigT]:
     def _owns_active_context(self) -> bool:
         return self.active and current_execution_context() is self
 
-    def __enter__(self) -> ExecutionContext[ConfigT]:
+    def __enter__(self) -> ExecutionContext[ConfigT, StateT]:
         if self._used:
             raise RuntimeError("execution context has already been entered")
         if current_execution_context() is not None:
@@ -335,10 +489,15 @@ class ExecutionContext[ConfigT]:
                     pass
 
 
-def current_execution() -> ExecutionContext[Any] | None:
+def current_execution() -> ExecutionContext[Any, Any] | None:
     """Return the active Provium execution in this logical context."""
     context = current_execution_context()
     return context if isinstance(context, ExecutionContext) else None
 
 
-__all__ = ["ExecutionContext", "Procedure", "current_execution"]
+__all__ = [
+    "ExecutionContext",
+    "Procedure",
+    "ProcedureInstance",
+    "current_execution",
+]

@@ -15,9 +15,12 @@ from provium import (
     ExecutionContext,
     JsonValue,
     Procedure,
+    ProcedureInstance,
     current_execution,
     open_artifact,
+    session,
 )
+from provium.procedure import _PersistentSession
 
 
 @dataclass(frozen=True)
@@ -95,15 +98,127 @@ def test_generates_one_unique_execution_identity_per_context() -> None:
     assert first.identity != second.identity
 
 
-def test_call_is_shorthand_for_execute() -> None:
+def test_call_creates_a_lazy_configured_procedure_instance() -> None:
     procedure = Procedure[Settings]("configured", "1", SettingsCodec())
 
-    execution = procedure(config=Settings(42))
+    instance = procedure(config=Settings(42))
 
-    assert execution.procedure is procedure
-    assert execution.config_snapshot == ConfigurationSnapshot(
+    assert isinstance(instance, ProcedureInstance)
+    assert instance.procedure is procedure
+    assert instance.config_snapshot == ConfigurationSnapshot(
         "settings-v1", {"value": 42}
     )
+    with pytest.raises(RuntimeError, match="has not run"):
+        instance.state
+
+    assert Procedure[Settings, None]("typed", "1").name == "typed"
+
+
+def test_instance_without_setup_repeats_with_fresh_executions() -> None:
+    instance = Procedure("plain", "1")()
+
+    with session():
+        with instance as first:
+            assert first.state is None
+        with instance as second:
+            assert second.state is None
+
+    assert first.identity != second.identity
+
+
+def test_instance_rejects_invalid_lifecycle_operations() -> None:
+    instance = Procedure("plain", "1")()
+    unused = Procedure("unused", "1")()
+    unused.close()
+    with pytest.raises(RuntimeError, match="closed session"):
+        unused.__enter__()
+
+    with pytest.raises(RuntimeError, match="not executing"):
+        instance.__exit__(None, None, None)
+
+    with session():
+        nested = Procedure("nested", "1")()
+        with Procedure("outer", "1").execute():
+            with pytest.raises(RuntimeError, match="nested"):
+                nested.__enter__()
+        with instance:
+            with pytest.raises(RuntimeError, match="already executing"):
+                instance.__enter__()
+            with pytest.raises(RuntimeError, match="cannot close"):
+                instance.close()
+
+    instance.close()
+    with pytest.raises(RuntimeError, match="closed session"):
+        instance.__enter__()
+
+
+def test_instance_cannot_move_between_active_logical_sessions() -> None:
+    instance = Procedure("plain", "1")()
+    owner = session()
+    owner.__enter__()
+    with instance:
+        pass
+
+    def enter_in_another_session() -> None:
+        with session(), pytest.raises(RuntimeError, match="different session"):
+            instance.__enter__()
+
+    Context().run(enter_in_another_session)
+    owner.__exit__(None, None, None)
+
+
+def test_failed_setup_closes_the_instance() -> None:
+    def fail(_: None) -> object:
+        raise LookupError("setup failure")
+
+    instance = Procedure("broken", "1", setup=fail)()
+    with session():
+        with pytest.raises(LookupError, match="setup failure"):
+            instance.__enter__()
+        with pytest.raises(RuntimeError, match="closed session"):
+            instance.__enter__()
+
+
+def test_persistent_session_defensive_lifecycle() -> None:
+    owner = session()
+    persistent = _PersistentSession(owner=owner)
+
+    with pytest.raises(RuntimeError, match="owning session"):
+        persistent.__enter__()
+
+    with owner:
+        persistent.__enter__()
+        with pytest.raises(RuntimeError, match="already active"):
+            persistent.__enter__()
+        persistent.__exit__(None, None, None)
+        with pytest.raises(RuntimeError, match="not active"):
+            persistent.__exit__(None, None, None)
+        persistent.close()
+        persistent.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            persistent.__enter__()
+
+
+def test_persistent_session_reports_reader_cleanup_failure() -> None:
+    class BrokenBody:
+        def close(self) -> None:
+            raise OSError("body cleanup failure")
+
+    class BrokenReader:
+        _body = BrokenBody()
+
+        def close(self) -> None:
+            raise OSError("reader cleanup failure")
+
+    with session() as owner:
+        persistent = _PersistentSession(owner=owner)
+        persistent.__enter__()
+        persistent._readers.extend((BrokenReader(), BrokenReader()))  # type: ignore[arg-type]
+        with pytest.raises(OSError, match="reader cleanup failure"):
+            persistent.close()
+
+        assert persistent.closed
+        assert not persistent.active
 
 
 def test_enters_procedure_directly_with_a_fresh_execution() -> None:
