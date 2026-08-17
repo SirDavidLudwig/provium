@@ -1,5 +1,7 @@
 # Provium
 
+[![codecov](https://codecov.io/gh/SirDavidLudwig/provium/graph/badge.svg)](https://codecov.io/gh/SirDavidLudwig/provium)
+
 [Documentation](https://sirdavidludwig.github.io/provium/) ·
 [PyPI](https://pypi.org/project/provium/) ·
 [Issues](https://github.com/SirDavidLudwig/provium/issues)
