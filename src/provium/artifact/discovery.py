@@ -25,11 +25,8 @@ def discover_catalogs() -> ArtifactCatalog:
                 "an ArtifactCatalog"
             )
             raise TypeError(message)
-        for registration in catalog.registrations.values():
-            discovered.register(
-                registration.canonical_identifier,
-                registration.artifact,
-            )
+        for definition in catalog.definitions.values():
+            discovered.register(definition)
     _discovered_catalog = discovered
     return discovered
 

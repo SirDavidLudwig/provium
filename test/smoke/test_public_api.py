@@ -8,6 +8,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactReader,
     ArtifactReference,
     ArtifactWriter,
@@ -29,12 +30,14 @@ class TextWriter(ArtifactWriter):
         self.body.write(value.encode("utf-8"))
 
 
-TextArtifact = Artifact("Text", reader=TextReader, writer=TextWriter)
+TextArtifact = Artifact("example.TextV1", "Text", TextReader, TextWriter)
 
 
 def public_catalog() -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.TextV1", TextArtifact)
+    catalog.register(
+        ArtifactDefinition("example.TextV1", f"{__name__}:TextArtifact", "Text.")
+    )
     return catalog
 
 

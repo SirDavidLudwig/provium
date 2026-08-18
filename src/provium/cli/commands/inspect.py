@@ -77,7 +77,7 @@ class InspectCommand:
         self, path: Path, header: ArtifactHeader, context: CommandContext
     ) -> None:
         try:
-            registration = discover_catalogs().resolve(header.artifact_identifier)
+            definition = discover_catalogs().resolve(header.artifact_identifier)
         except KeyError:
             print(
                 "\nBody inspection unavailable: artifact type could not be located.",
@@ -86,7 +86,7 @@ class InspectCommand:
             return
 
         with session():
-            reader = registration.artifact.open(path)
+            reader = definition.resolve().open(path)
             inspected = reader.inspect()
 
         if inspected is INSPECTION_UNAVAILABLE:

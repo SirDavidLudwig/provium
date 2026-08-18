@@ -35,6 +35,7 @@ def load_text(source: Path, writer: TextWriter) -> None:
 
 
 TextArtifact = Artifact(
+    identifier="example.TextV1",
     label="Text",
     reader=TextReader,
     writer=TextWriter,

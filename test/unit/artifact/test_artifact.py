@@ -20,7 +20,7 @@ class ExampleWriter(ArtifactWriter):
     pass
 
 
-Example = Artifact("Example", reader=ExampleReader, writer=ExampleWriter)
+Example = Artifact("example.ExampleV1", "Example", ExampleReader, ExampleWriter)
 
 
 @dataclass
@@ -106,16 +106,18 @@ def test_direct_io_requires_an_explicit_filesystem_path(operation: str) -> None:
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
-        (("", ExampleReader, ExampleWriter), "label"),
-        ((42, ExampleReader, ExampleWriter), "label"),
-        (("Example", object, ExampleWriter), "reader"),
-        (("Example", 42, ExampleWriter), "reader"),
-        (("Example", ExampleReader, object), "writer"),
-        (("Example", ExampleReader, 42), "writer"),
+        (("", "Example", ExampleReader, ExampleWriter), "identifier"),
+        ((42, "Example", ExampleReader, ExampleWriter), "identifier"),
+        (("example.V1", "", ExampleReader, ExampleWriter), "label"),
+        (("example.V1", 42, ExampleReader, ExampleWriter), "label"),
+        (("example.V1", "Example", object, ExampleWriter), "reader"),
+        (("example.V1", "Example", 42, ExampleWriter), "reader"),
+        (("example.V1", "Example", ExampleReader, object), "writer"),
+        (("example.V1", "Example", ExampleReader, 42), "writer"),
     ],
 )
 def test_artifact_validates_its_definition(
-    arguments: tuple[object, object, object], message: str
+    arguments: tuple[object, object, object, object], message: str
 ) -> None:
     with pytest.raises((TypeError, ValueError), match=message):
         Artifact(*arguments)  # type: ignore[arg-type]
@@ -126,8 +128,6 @@ def test_artifact_validates_its_definition(
     [
         ({"dump": 42}, TypeError, "dump"),
         ({"load": 42}, TypeError, "load"),
-        ({"identifier": ""}, ValueError, "identifier"),
-        ({"identifier": 42}, ValueError, "identifier"),
     ],
 )
 def test_artifact_validates_optional_details(
@@ -135,6 +135,7 @@ def test_artifact_validates_optional_details(
 ) -> None:
     with pytest.raises(error_type, match=message):
         Artifact(
+            "example.ExampleV1",
             "Example",
             reader=ExampleReader,
             writer=ExampleWriter,

@@ -21,16 +21,18 @@ def _path(value: str | PathLike[str]) -> Path:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
-    """An immutable logical artifact definition."""
+    """An immutable artifact reader and writer implementation."""
 
+    identifier: str
     label: str
     reader: type[ReaderT]
     writer: type[WriterT]
     dump: Callable[[ReaderT, Path], None] | None = None
     load: Callable[[Path, WriterT], None] | None = None
-    identifier: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.identifier, str) or not self.identifier:
+            raise ValueError("artifact identifier must be a non-empty string")
         if not isinstance(self.label, str) or not self.label:
             raise ValueError("artifact label must be a non-empty string")
         if not isinstance(self.reader, type) or not issubclass(
@@ -45,10 +47,6 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
             raise TypeError("artifact dump must be callable")
         if self.load is not None and not callable(self.load):
             raise TypeError("artifact load must be callable")
-        if self.identifier is not None and (
-            not isinstance(self.identifier, str) or not self.identifier
-        ):
-            raise ValueError("artifact identifier must be a non-empty string")
 
     def open(self, path: str | PathLike[str]) -> ReaderT:
         artifact_path = _path(path)
@@ -61,14 +59,6 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
         if not callable(opener):
             raise TypeError("active context does not support artifact opening")
         return cast(ReaderT, opener(self, artifact_path, self.reader))
-
-    @property
-    def default_identifier(self) -> str:
-        """Return the identifier used when this definition is not registered."""
-        if self.identifier is not None:
-            return self.identifier
-        qualified_label = self.label.replace(" ", "")
-        return f"{self.reader.__module__}.{qualified_label}"
 
     def create(self, path: str | PathLike[str]) -> WriterT:
         artifact_path = _path(path)

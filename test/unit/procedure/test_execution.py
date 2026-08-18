@@ -48,7 +48,7 @@ class Writer(ArtifactWriter):
     pass
 
 
-Example = Artifact("Example", reader=Reader, writer=Writer)
+Example = Artifact("example.ExampleV1", "Example", Reader, Writer)
 
 
 def test_enters_and_exits_procedure_scope_and_exposes_active_execution() -> None:
@@ -321,16 +321,10 @@ def test_create_uses_class_path_for_unregistered_artifact(
     with Procedure("example", "1").execute():
         writer = Example.create(path)
 
-    assert writer.artifact_identifier == Example.default_identifier
+    assert writer.artifact_identifier == Example.identifier
 
 
-def test_create_rejects_writer_factory_returning_wrong_object(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    catalog = ArtifactCatalog()
-    catalog.register("example.ExampleV1", Example)
-    monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
-
+def test_create_rejects_writer_factory_returning_wrong_object() -> None:
     def invalid_writer(*args: object) -> object:
         return object()
 

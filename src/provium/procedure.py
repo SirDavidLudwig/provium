@@ -12,7 +12,7 @@ from types import GenericAlias
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 from uuid import uuid4
 
-from .artifact.catalog import ArtifactRegistration
+from .artifact.catalog import ArtifactDefinition
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
     ArtifactHeader,
@@ -320,8 +320,8 @@ class ExecutionContext[ConfigT, StateT]:
         )
 
     @property
-    def input_registrations(self) -> tuple[ArtifactRegistration, ...]:
-        return () if self._session is None else self._session.input_registrations
+    def input_definitions(self) -> tuple[ArtifactDefinition, ...]:
+        return () if self._session is None else self._session.input_definitions
 
     @property
     def writers(self) -> tuple[ArtifactWriter, ...]:
@@ -385,13 +385,7 @@ class ExecutionContext[ConfigT, StateT]:
     ) -> ArtifactWriter:
         from .artifact.writer import ArtifactWriter
 
-        catalog = discover_catalogs()
-        try:
-            registration = catalog.registration_for(artifact)
-        except KeyError:
-            artifact_identifier = artifact.default_identifier
-        else:
-            artifact_identifier = registration.canonical_identifier
+        artifact_identifier = artifact.identifier
         reference = ArtifactReference(
             str(uuid4()),
             artifact_identifier,

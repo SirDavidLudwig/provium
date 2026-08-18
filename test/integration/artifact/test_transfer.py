@@ -9,6 +9,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
     Procedure,
@@ -39,6 +40,7 @@ def load_text(source: Path, writer: TextWriter) -> None:
 
 
 TextArtifact = Artifact(
+    "example.TextV1",
     "Text",
     reader=TextReader,
     writer=TextWriter,
@@ -57,14 +59,18 @@ class BytesWriter(ArtifactWriter):
         self.body.write(value)
 
 
-BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @pytest.fixture(autouse=True)
 def catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     value = ArtifactCatalog()
-    value.register("example.TextV1", TextArtifact)
-    value.register("example.BytesV1", BytesArtifact)
+    value.register(
+        ArtifactDefinition("example.TextV1", f"{__name__}:TextArtifact", "Text.")
+    )
+    value.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
     monkeypatch.setattr("provium.artifact.transfer.discover_catalogs", lambda: value)
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: value)
     return value

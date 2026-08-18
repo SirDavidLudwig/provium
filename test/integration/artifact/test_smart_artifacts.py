@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from provium import Artifact, ArtifactCatalog, ArtifactReader, ArtifactWriter, Procedure
+from provium import (
+    Artifact,
+    ArtifactCatalog,
+    ArtifactDefinition,
+    ArtifactReader,
+    ArtifactWriter,
+    Procedure,
+)
 
 
 class StreamingReader(ArtifactReader):
@@ -23,7 +30,7 @@ class StreamingWriter(ArtifactWriter):
 
 
 StreamingArtifact = Artifact(
-    "Streaming", reader=StreamingReader, writer=StreamingWriter
+    "example.StreamingV1", "Streaming", StreamingReader, StreamingWriter
 )
 
 
@@ -57,14 +64,22 @@ class IndexedWriter(ArtifactWriter):
         self.body.write(struct.pack(">Q", index_offset))
 
 
-IndexedArtifact = Artifact("Indexed", reader=IndexedReader, writer=IndexedWriter)
+IndexedArtifact = Artifact("example.IndexedV1", "Indexed", IndexedReader, IndexedWriter)
 
 
 @pytest.fixture
 def smart_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.StreamingV1", StreamingArtifact)
-    catalog.register("example.IndexedV1", IndexedArtifact)
+    catalog.register(
+        ArtifactDefinition(
+            "example.StreamingV1", f"{__name__}:StreamingArtifact", "Streaming."
+        )
+    )
+    catalog.register(
+        ArtifactDefinition(
+            "example.IndexedV1", f"{__name__}:IndexedArtifact", "Indexed."
+        )
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 
@@ -116,10 +131,8 @@ def test_artifact_definition_exposes_concrete_reader_and_writer_types(
     from test.support.integration.lazy_reader import LazyReader
     from test.support.integration.lazy_writer import LazyWriter
 
-    LazyArtifact = Artifact("Lazy", reader=LazyReader, writer=LazyWriter)
-    catalog = ArtifactCatalog()
-    catalog.register("example.LazyV1", LazyArtifact)
-    monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
+    LazyArtifact = Artifact("example.LazyV1", "Lazy", LazyReader, LazyWriter)
+    monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
 
     path = tmp_path / "lazy.pa"
     with Procedure("write", "1").execute():

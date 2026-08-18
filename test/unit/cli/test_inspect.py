@@ -10,6 +10,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactHeader,
     ArtifactLineage,
     ArtifactReader,
@@ -37,10 +38,10 @@ class Writer(ArtifactWriter):
     pass
 
 
-InspectingArtifact = Artifact("Inspecting", reader=InspectingReader, writer=Writer)
+InspectingArtifact = Artifact("example.BytesV1", "Inspecting", InspectingReader, Writer)
 
 
-PlainArtifact = Artifact("Plain", reader=PlainReader, writer=Writer)
+PlainArtifact = Artifact("example.BytesV1", "Plain", PlainReader, Writer)
 
 
 def write_artifact(path: Path, body: bytes = b"hello") -> ArtifactHeader:
@@ -152,7 +153,11 @@ def test_inspect_body_reports_a_missing_inspector(
     path = tmp_path / "artifact.pa"
     write_artifact(path)
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", PlainArtifact)
+    catalog.register(
+        ArtifactDefinition(
+            "example.BytesV1", f"{__name__}:PlainArtifact", "Plain bytes."
+        )
+    )
     monkeypatch.setattr(
         "provium.cli.commands.inspect.discover_catalogs", lambda: catalog
     )
@@ -174,7 +179,11 @@ def test_inspect_body_renders_the_reader_value(
     path = tmp_path / "artifact.pa"
     write_artifact(path)
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", InspectingArtifact)
+    catalog.register(
+        ArtifactDefinition(
+            "example.BytesV1", f"{__name__}:InspectingArtifact", "Inspectable bytes."
+        )
+    )
     monkeypatch.setattr(
         "provium.cli.commands.inspect.discover_catalogs", lambda: catalog
     )

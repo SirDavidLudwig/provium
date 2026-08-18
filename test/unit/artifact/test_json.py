@@ -7,6 +7,7 @@ import pytest
 
 from provium import (
     ArtifactCatalog,
+    ArtifactDefinition,
     JsonArtifact,
     JsonArtifactReader,
     JsonArtifactWriter,
@@ -40,7 +41,7 @@ def test_json_artifact_round_trips_generic_json_without_registration(
         assert inspector.inspect() == value
 
     header = decode_header(path.read_bytes())
-    assert header.artifact_identifier == (JsonArtifact.default_identifier)
+    assert header.artifact_identifier == JsonArtifact.identifier
 
 
 def test_json_writer_uses_canonical_compact_encoding(
@@ -99,16 +100,24 @@ def test_json_reader_rejects_malformed_json(
         JsonArtifact.open(path).read()
 
 
-def test_json_artifact_can_use_registered_identifier(
+def test_json_artifact_can_be_registered_for_dynamic_loading(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "value.pa"
     catalog = ArtifactCatalog()
-    catalog.register("provium.JsonV1", JsonArtifact)
+    catalog.register(
+        ArtifactDefinition(
+            JsonArtifact.identifier,
+            "provium.artifact.prefab.json:JsonArtifact",
+            "Generic JSON.",
+        )
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
 
     with Procedure("create", "1").execute():
         JsonArtifact.create(path).write([1, 2, 3])
 
-    assert decode_header(path.read_bytes()).artifact_identifier == "provium.JsonV1"
+    assert (
+        decode_header(path.read_bytes()).artifact_identifier == JsonArtifact.identifier
+    )

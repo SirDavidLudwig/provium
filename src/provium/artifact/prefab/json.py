@@ -37,10 +37,10 @@ class JsonArtifactWriter(ArtifactWriter):
 
 
 JsonArtifact = Artifact(
+    "provium.artifact.prefab.json.JsonArtifact",
     "JSON",
     reader=JsonArtifactReader,
     writer=JsonArtifactWriter,
-    identifier="provium.artifact.prefab.json.JsonArtifact",
 )
 
 

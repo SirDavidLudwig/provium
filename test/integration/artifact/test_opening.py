@@ -8,6 +8,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactHeader,
     ArtifactLineage,
     ArtifactReader,
@@ -31,7 +32,7 @@ class BytesWriter(ArtifactWriter):
     pass
 
 
-BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 class OtherReader(ArtifactReader):
@@ -42,7 +43,7 @@ class OtherWriter(ArtifactWriter):
     pass
 
 
-OtherArtifact = Artifact("Other", reader=OtherReader, writer=OtherWriter)
+OtherArtifact = Artifact("example.OtherV1", "Other", OtherReader, OtherWriter)
 
 
 class BrokenReader(ArtifactReader):
@@ -50,15 +51,21 @@ class BrokenReader(ArtifactReader):
         raise RuntimeError("reader construction failed")
 
 
-BrokenArtifact = Artifact("Broken", reader=BrokenReader, writer=OtherWriter)
+BrokenArtifact = Artifact("example.BrokenV1", "Broken", BrokenReader, OtherWriter)
 
 
 @pytest.fixture
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", BytesArtifact)
-    catalog.register("example.OtherV1", OtherArtifact)
-    catalog.register("example.BrokenV1", BrokenArtifact)
+    catalog.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
+    catalog.register(
+        ArtifactDefinition("example.OtherV1", f"{__name__}:OtherArtifact", "Other.")
+    )
+    catalog.register(
+        ArtifactDefinition("example.BrokenV1", f"{__name__}:BrokenArtifact", "Broken.")
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 
@@ -118,7 +125,7 @@ def test_opens_unregistered_artifact_with_concrete_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "value.pa"
-    identifier = BytesArtifact.default_identifier
+    identifier = BytesArtifact.identifier
     reference, lineage = write_artifact(
         path,
         b"value",
@@ -135,7 +142,27 @@ def test_opens_unregistered_artifact_with_concrete_type(
 
         assert reader.read() == b"value"
         assert execution.inputs == (lineage.artifact(reference),)
-        assert execution.input_registrations == ()
+        assert execution.input_definitions == ()
+
+
+def test_typed_open_does_not_resolve_a_registered_lazy_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "value.pa"
+    write_artifact(path, b"value", identity="artifact-1")
+    definition = ArtifactDefinition(
+        BytesArtifact.identifier,
+        "package_that_does_not_exist:BytesArtifact",
+        "Bytes.",
+    )
+    catalog = ArtifactCatalog()
+    catalog.register(definition)
+    monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
+
+    with Procedure("consume", "1").execute() as execution:
+        assert BytesArtifact.open(path).read() == b"value"
+        assert execution.input_definitions == (definition,)
 
 
 def test_generic_open_still_requires_dynamic_registration(
@@ -143,7 +170,7 @@ def test_generic_open_still_requires_dynamic_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "value.pa"
-    identifier = BytesArtifact.default_identifier
+    identifier = BytesArtifact.identifier
     write_artifact(path, b"value", identity="artifact-1", identifier=identifier)
     monkeypatch.setattr(
         "provium.procedure.discover_catalogs",
@@ -166,7 +193,7 @@ def test_expected_definition_opens_an_unregistered_artifact(
         path,
         b"value",
         identity="artifact-1",
-        identifier=BytesArtifact.default_identifier,
+        identifier=BytesArtifact.identifier,
     )
     monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
 
@@ -186,7 +213,7 @@ def test_expected_definition_rejects_a_different_unregistered_artifact(
         path,
         b"value",
         identity="artifact-1",
-        identifier=BytesArtifact.default_identifier,
+        identifier=BytesArtifact.identifier,
     )
     monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
 

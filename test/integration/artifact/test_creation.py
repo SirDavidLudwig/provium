@@ -8,6 +8,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactHeader,
     ArtifactReader,
     ArtifactWriter,
@@ -27,13 +28,15 @@ class BytesWriter(ArtifactWriter):
         return self.body.write(value)
 
 
-BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @pytest.fixture(autouse=True)
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", BytesArtifact)
+    catalog.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 
@@ -200,7 +203,7 @@ def test_new_provenance_uses_canonical_identifier(tmp_path: Path) -> None:
     assert record.reference.artifact_identifier == "example.BytesV1"
 
 
-def test_unregistered_artifact_uses_default_identifier(
+def test_imperative_artifact_uses_its_required_identifier(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -215,7 +218,7 @@ def test_unregistered_artifact_uses_default_identifier(
         writer.write(b"value")
 
     header, body = read_body(path)
-    expected = BytesArtifact.default_identifier
+    expected = BytesArtifact.identifier
     assert body == b"value"
     assert header.artifact_identifier == expected
     assert header.lineage.artifacts[writer.identity].reference.artifact_identifier == (

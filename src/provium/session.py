@@ -12,7 +12,7 @@ from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .artifact.catalog import ArtifactRegistration
+from .artifact.catalog import ArtifactDefinition
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
     CONTAINER_VERSION,
@@ -57,7 +57,7 @@ class Session:
     _inputs: dict[str, ArtifactRecord] = field(default_factory=dict)
     _readers: list[ArtifactReader] = field(default_factory=list)
     _input_lineage: ArtifactLineage = field(default_factory=ArtifactLineage)
-    _input_registrations: list[ArtifactRegistration] = field(default_factory=list)
+    _input_definitions: list[ArtifactDefinition] = field(default_factory=list)
     _discover_catalogs: Callable[[], Any] | None = None
     _managed_resources: list[Any] = field(default_factory=list)
 
@@ -137,9 +137,9 @@ class Session:
         return self.parent.input_lineage.merge(self._input_lineage)
 
     @property
-    def input_registrations(self) -> tuple[ArtifactRegistration, ...]:
-        inherited = () if self.parent is None else self.parent.input_registrations
-        return (*inherited, *self._input_registrations)
+    def input_definitions(self) -> tuple[ArtifactDefinition, ...]:
+        inherited = () if self.parent is None else self.parent.input_definitions
+        return (*inherited, *self._input_definitions)
 
     def open_artifact(
         self,
@@ -167,32 +167,21 @@ class Session:
             header, file_length = _read_header_from_stream(stream)
             catalog = (self._discover_catalogs or discover_catalogs)()
             try:
-                registration = catalog.resolve(header.artifact_identifier)
+                definition = catalog.resolve(header.artifact_identifier)
             except KeyError:
-                registration = None
-            resolved_artifact = None if registration is None else registration.artifact
+                definition = None
             if requested is not None:
-                matches = (
-                    registration is not None and registration.artifact is requested
-                ) or (
-                    registration is None
-                    and header.artifact_identifier == requested.default_identifier
-                )
-                if not matches:
+                if header.artifact_identifier != requested.identifier:
                     raise TypeError(  # noqa: TRY301
                         "artifact does not match the requested artifact type"
                     )
                 resolved_artifact = requested
-            elif resolved_artifact is None:
-                if expected is None:
-                    raise ValueError(  # noqa: TRY301
-                        f"unknown artifact identifier: {header.artifact_identifier}"
-                    )
+            elif expected is not None:
                 resolved_artifact = next(
                     (
                         artifact
                         for artifact in expected
-                        if artifact.default_identifier == header.artifact_identifier
+                        if artifact.identifier == header.artifact_identifier
                     ),
                     None,
                 )
@@ -200,10 +189,12 @@ class Session:
                     raise TypeError(  # noqa: TRY301
                         "artifact is outside the expected artifact types"
                     )
-            if expected is not None and resolved_artifact not in expected:
-                raise TypeError(  # noqa: TRY301
-                    "artifact is outside the expected artifact types"
-                )
+            else:
+                if definition is None:
+                    raise ValueError(  # noqa: TRY301
+                        f"unknown artifact identifier: {header.artifact_identifier}"
+                    )
+                resolved_artifact = definition.resolve()
             metadata_end = header.metadata_offset + header.metadata_length
             if header.body_offset < metadata_end:
                 raise ValueError(  # noqa: TRY301
@@ -248,8 +239,8 @@ class Session:
         self._readers.append(reader)
         self._inputs.setdefault(record.reference.identity, record)
         self._input_lineage = self._input_lineage.merge(header.lineage)
-        if registration is not None:
-            self._input_registrations.append(registration)
+        if definition is not None:
+            self._input_definitions.append(definition)
         return reader
 
 

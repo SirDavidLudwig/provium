@@ -7,6 +7,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
     Procedure,
@@ -24,13 +25,15 @@ class BytesWriter(ArtifactWriter):
         return self.body.write(value)
 
 
-BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @pytest.fixture(autouse=True)
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", BytesArtifact)
+    catalog.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 
@@ -174,7 +177,7 @@ def test_writer_construction_failure_removes_the_temporary_file(
         def __init__(self, *args: object, **kwargs: object) -> None:
             raise RuntimeError("writer construction failed")
 
-    artifact = Artifact("Broken", reader=BytesReader, writer=BrokenWriter)
+    artifact = Artifact("example.BrokenV1", "Broken", BytesReader, BrokenWriter)
     destination = tmp_path / "broken.pa"
 
     with pytest.raises((RuntimeError, TypeError), match="writer"):

@@ -1,7 +1,7 @@
 from importlib.metadata import version
 
 from .artifact import Artifact, BoundReadArtifact, BoundWriteArtifact, open_artifact
-from .artifact.catalog import ArtifactCatalog, ArtifactRegistration
+from .artifact.catalog import ArtifactCatalog, ArtifactDefinition
 from .artifact.discovery import discover_catalogs, reset_discovery
 from .artifact.header import ArtifactHeader, decode_header, encode_header
 from .artifact.prefab import JsonArtifact, JsonArtifactReader, JsonArtifactWriter
@@ -38,7 +38,7 @@ __all__ = [
     "ArtifactReader",
     "ArtifactRecord",
     "ArtifactReference",
-    "ArtifactRegistration",
+    "ArtifactDefinition",
     "ArtifactWriter",
     "BoundReadArtifact",
     "BoundWriteArtifact",

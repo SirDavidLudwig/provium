@@ -5,7 +5,13 @@ from typing import ClassVar
 
 import pytest
 
-from provium import Artifact, ArtifactCatalog, ArtifactReader, ArtifactWriter
+from provium import (
+    Artifact,
+    ArtifactCatalog,
+    ArtifactDefinition,
+    ArtifactReader,
+    ArtifactWriter,
+)
 from provium.artifact.discovery import discover_catalogs, reset_discovery
 
 
@@ -17,10 +23,10 @@ class Writer(ArtifactWriter):
     pass
 
 
-Integer = Artifact("Integer", reader=Reader, writer=Writer)
+Integer = Artifact("example.IntegerV1", "Integer", Reader, Writer)
 
 
-Other = Artifact("Other", reader=Reader, writer=Writer)
+Other = Artifact("example.OtherV1", "Other", Reader, Writer)
 
 
 @dataclass
@@ -55,7 +61,14 @@ def catalog(
     artifact: Artifact,
 ) -> ArtifactCatalog:
     result = ArtifactCatalog()
-    result.register(identifier, artifact)
+    target_name = "Integer" if artifact is Integer else "Other"
+    result.register(
+        ArtifactDefinition(
+            identifier,
+            f"{__name__}:{target_name}",
+            f"The {target_name.lower()} artifact.",
+        )
+    )
     return result
 
 
@@ -79,7 +92,7 @@ def test_discovers_one_catalog_and_uses_expected_entry_point_group(
 
     discovered = discover_catalogs()
 
-    assert discovered.resolve("example.IntegerV1").artifact is Integer
+    assert discovered.resolve("example.IntegerV1").resolve() is Integer
     assert FakeEntryPoints.selected_groups == ["provium.catalogs"]
 
 
@@ -94,11 +107,8 @@ def test_discovers_multiple_catalogs(
 
     discovered = discover_catalogs()
 
-    assert discovered.resolve("example.IntegerV1").artifact is Integer
-    assert discovered.resolve("example.OtherV1").artifact is Other
-    assert (
-        discovered.registration_for(Integer).canonical_identifier == "example.IntegerV1"
-    )
+    assert discovered.resolve("example.IntegerV1").resolve() is Integer
+    assert discovered.resolve("example.OtherV1").resolve() is Other
 
 
 def test_discovery_is_cached_until_reset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,7 +131,7 @@ def test_detects_conflicts_across_catalogs(
     second = catalog("example.SharedV1", Other)
     install_entry_points(monkeypatch, first, second)
 
-    with pytest.raises(ValueError, match="canonical identifier"):
+    with pytest.raises(ValueError, match="artifact identifier"):
         discover_catalogs()
 
 

@@ -4,6 +4,7 @@ from typing import assert_type
 
 from provium import (
     Artifact,
+    ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
     ExecutionContext,
@@ -20,7 +21,10 @@ class IntegerWriter(ArtifactWriter):
     pass
 
 
-Integer = Artifact("Integer", reader=IntegerReader, writer=IntegerWriter)
+Integer = Artifact("example.IntegerV1", "Integer", IntegerReader, IntegerWriter)
+IntegerDefinition: ArtifactDefinition[Artifact[IntegerReader, IntegerWriter]] = (
+    ArtifactDefinition("example.IntegerV1", "example.artifacts:Integer", "An integer.")
+)
 
 
 def static_type_contract() -> None:
@@ -28,6 +32,7 @@ def static_type_contract() -> None:
     assert_type(Integer.create("output.pa"), IntegerWriter)
     assert_type(Integer.bind_read("input.pa").open(), IntegerReader)
     assert_type(Integer.bind_write("output.pa").open(), IntegerWriter)
+    assert_type(IntegerDefinition.resolve(), Artifact[IntegerReader, IntegerWriter])
 
 
 class Settings:
