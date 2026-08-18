@@ -48,9 +48,7 @@ class Writer(ArtifactWriter):
     pass
 
 
-class Example(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
+Example = Artifact("Example", reader=Reader, writer=Writer)
 
 
 def test_enters_and_exits_procedure_scope_and_exposes_active_execution() -> None:
@@ -323,7 +321,7 @@ def test_create_uses_class_path_for_unregistered_artifact(
     with Procedure("example", "1").execute():
         writer = Example.create(path)
 
-    assert writer.artifact_identifier == f"{Example.__module__}.{Example.__qualname__}"
+    assert writer.artifact_identifier == Example.default_identifier
 
 
 def test_create_rejects_writer_factory_returning_wrong_object(

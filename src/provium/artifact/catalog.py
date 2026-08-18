@@ -1,4 +1,4 @@
-"""Explicit registration of artifact classes and their persistent identifiers."""
+"""Explicit registration of artifact definitions and persistent identifiers."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _require_identifier(value: str, field_name: str) -> None:
 @dataclass(frozen=True, slots=True)
 class ArtifactRegistration:
     canonical_identifier: str
-    artifact: type[Artifact]
+    artifact: Artifact
     aliases: tuple[str, ...] = ()
 
 
@@ -26,18 +26,18 @@ class ArtifactCatalog:
 
     def __init__(self) -> None:
         self._identifiers: dict[str, ArtifactRegistration] = {}
-        self._artifacts: dict[type[Artifact], ArtifactRegistration] = {}
+        self._artifacts: dict[Artifact, ArtifactRegistration] = {}
 
     def register(
         self,
         canonical_identifier: str,
-        artifact: type[Artifact],
+        artifact: Artifact,
         *,
         aliases: tuple[str, ...] = (),
     ) -> ArtifactRegistration:
         _require_identifier(canonical_identifier, "canonical identifier")
-        if not isinstance(artifact, type) or not issubclass(artifact, Artifact):
-            raise TypeError("artifact must be an Artifact class")
+        if not isinstance(artifact, Artifact):
+            raise TypeError("artifact must be an Artifact instance")
         for alias in aliases:
             _require_identifier(alias, "alias")
         if len(aliases) != len(set(aliases)):
@@ -49,7 +49,7 @@ class ArtifactCatalog:
                 f"canonical identifier is already registered: {canonical_identifier}"
             )
         if artifact in self._artifacts:
-            raise ValueError("artifact class is already registered")
+            raise ValueError("artifact is already registered")
         for alias in aliases:
             if alias in self._identifiers:
                 raise ValueError(f"alias is already registered: {alias}")
@@ -63,7 +63,7 @@ class ArtifactCatalog:
     def resolve(self, identifier: str) -> ArtifactRegistration:
         return self._identifiers[identifier]
 
-    def registration_for(self, artifact: type[Artifact]) -> ArtifactRegistration:
+    def registration_for(self, artifact: Artifact) -> ArtifactRegistration:
         return self._artifacts[artifact]
 
     @property

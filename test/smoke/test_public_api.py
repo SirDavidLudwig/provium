@@ -35,9 +35,7 @@ class TextWriter(ArtifactWriter):
         self.body.write(value.encode("utf-8"))
 
 
-class TextArtifact(Artifact[TextReader, TextWriter]):
-    reader = TextReader
-    writer = TextWriter
+TextArtifact = Artifact("Text", reader=TextReader, writer=TextWriter)
 
 
 def public_catalog() -> ArtifactCatalog:

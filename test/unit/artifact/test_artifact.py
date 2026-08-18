@@ -4,6 +4,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from os import PathLike
+from pathlib import Path
 
 import pytest
 
@@ -19,16 +20,19 @@ class ExampleWriter(ArtifactWriter):
     pass
 
 
+Example = Artifact("Example", reader=ExampleReader, writer=ExampleWriter)
+
+
 @dataclass
 class FakeContext:
     active: bool = True
-    calls: list[tuple[str, type[Artifact], object, type[object]]] = field(
+    calls: list[tuple[str, Artifact, object, type[object]]] = field(
         default_factory=list
     )
 
     def open_artifact(
         self,
-        artifact: type[Artifact],
+        artifact: Artifact,
         path: str | PathLike[str],
         reader_type: type[ArtifactReader],
     ) -> ArtifactReader:
@@ -37,7 +41,7 @@ class FakeContext:
 
     def create_artifact(
         self,
-        artifact: type[Artifact],
+        artifact: Artifact,
         path: str | PathLike[str],
         writer_type: type[ArtifactWriter],
     ) -> ArtifactWriter:
@@ -52,102 +56,93 @@ def fake_context() -> Generator[FakeContext]:
         yield context
 
 
-def test_resolves_direct_reader_and_writer_types() -> None:
-    class Example(Artifact[ExampleReader, ExampleWriter]):
-        reader = ExampleReader
-        writer = ExampleWriter
-
+def test_artifact_opens_and_creates_its_native_types() -> None:
     with fake_context() as context:
         reader = Example.open("input.pa")
-        writer = Example.create("output.pa")
+        writer = Example.create(Path("output.pa"))
 
     assert isinstance(reader, ExampleReader)
     assert isinstance(writer, ExampleWriter)
     assert context.calls == [
-        ("open", Example, "input.pa", ExampleReader),
-        ("create", Example, "output.pa", ExampleWriter),
+        ("open", Example, Path("input.pa"), ExampleReader),
+        ("create", Example, Path("output.pa"), ExampleWriter),
     ]
 
 
-def test_reader_provider_is_lazy_cached_and_does_not_resolve_writer() -> None:
-    calls: list[str] = []
+def test_bound_artifact_opens_in_its_bound_mode() -> None:
+    read = Example.bind_read("input.pa")
+    write = Example.bind_write(Path("output.pa"))
 
-    class Example(Artifact[ExampleReader, ExampleWriter]):
-        @staticmethod
-        def reader() -> type[ExampleReader]:
-            calls.append("reader")
-            return ExampleReader
+    with fake_context() as context:
+        reader = read.open()
+        writer = write.open()
 
-        @staticmethod
-        def writer() -> type[ExampleWriter]:
-            calls.append("writer")
-            return ExampleWriter
-
-    assert calls == []
-    with fake_context():
-        Example.open("first.pa")
-        Example.open("second.pa")
-    assert calls == ["reader"]
+    assert isinstance(reader, ExampleReader)
+    assert isinstance(writer, ExampleWriter)
+    assert read.artifact is Example
+    assert read.path == Path("input.pa")
+    assert write.artifact is Example
+    assert write.path == Path("output.pa")
+    assert context.calls == [
+        ("open", Example, Path("input.pa"), ExampleReader),
+        ("create", Example, Path("output.pa"), ExampleWriter),
+    ]
 
 
-def test_writer_provider_is_lazy_cached_and_does_not_resolve_reader() -> None:
-    calls: list[str] = []
+@pytest.mark.parametrize("path", [b"data", object(), 42])
+def test_binding_requires_an_explicit_filesystem_path(path: object) -> None:
+    with pytest.raises(TypeError, match="path"):
+        Example.bind_read(path)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="path"):
+        Example.bind_write(path)  # type: ignore[arg-type]
 
-    class Example(Artifact[ExampleReader, ExampleWriter]):
-        @staticmethod
-        def reader() -> type[ExampleReader]:
-            calls.append("reader")
-            return ExampleReader
 
-        @staticmethod
-        def writer() -> type[ExampleWriter]:
-            calls.append("writer")
-            return ExampleWriter
-
-    with fake_context():
-        Example.create("first.pa")
-        Example.create("second.pa")
-    assert calls == ["writer"]
+@pytest.mark.parametrize("operation", ["open", "create"])
+def test_direct_io_requires_an_explicit_filesystem_path(operation: str) -> None:
+    with fake_context(), pytest.raises(TypeError, match="path"):
+        getattr(Example, operation)(b"artifact.pa")
 
 
 @pytest.mark.parametrize(
-    ("provider_name", "result"),
+    ("arguments", "message"),
     [
-        ("reader", object),
-        ("reader", ExampleWriter),
-        ("reader", 42),
-        ("writer", object),
-        ("writer", ExampleReader),
-        ("writer", 42),
+        (("", ExampleReader, ExampleWriter), "label"),
+        ((42, ExampleReader, ExampleWriter), "label"),
+        (("Example", object, ExampleWriter), "reader"),
+        (("Example", 42, ExampleWriter), "reader"),
+        (("Example", ExampleReader, object), "writer"),
+        (("Example", ExampleReader, 42), "writer"),
     ],
 )
-def test_rejects_invalid_provider_results(provider_name: str, result: object) -> None:
-    class Example(Artifact[ExampleReader, ExampleWriter]):
-        reader = ExampleReader
-        writer = ExampleWriter
-
-    setattr(Example, provider_name, staticmethod(lambda: result))
-
-    with fake_context(), pytest.raises(TypeError, match=provider_name):
-        if provider_name == "reader":
-            Example.open("input.pa")
-        else:
-            Example.create("output.pa")
+def test_artifact_validates_its_definition(
+    arguments: tuple[object, object, object], message: str
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=message):
+        Artifact(*arguments)  # type: ignore[arg-type]
 
 
-def test_rejects_missing_provider() -> None:
-    class Missing(Artifact[ExampleReader, ExampleWriter]):
-        pass
-
-    with fake_context(), pytest.raises(TypeError, match="reader"):
-        Missing.open("input.pa")
+@pytest.mark.parametrize(
+    ("keywords", "error_type", "message"),
+    [
+        ({"dump": 42}, TypeError, "dump"),
+        ({"load": 42}, TypeError, "load"),
+        ({"identifier": ""}, ValueError, "identifier"),
+        ({"identifier": 42}, ValueError, "identifier"),
+    ],
+)
+def test_artifact_validates_optional_details(
+    keywords: dict[str, object], error_type: type[Exception], message: str
+) -> None:
+    with pytest.raises(error_type, match=message):
+        Artifact(
+            "Example",
+            reader=ExampleReader,
+            writer=ExampleWriter,
+            **keywords,  # type: ignore[arg-type]
+        )
 
 
 def test_artifact_io_requires_a_compatible_active_context() -> None:
-    class Example(Artifact[ExampleReader, ExampleWriter]):
-        reader = ExampleReader
-        writer = ExampleWriter
-
     with pytest.raises(RuntimeError, match="execution context"):
         Example.open("input.pa")
     with pytest.raises(RuntimeError, match="execution context"):

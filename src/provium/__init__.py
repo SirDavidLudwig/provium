@@ -1,6 +1,6 @@
 from importlib.metadata import version
 
-from .artifact import Artifact, open_artifact
+from .artifact import Artifact, BoundReadArtifact, BoundWriteArtifact, open_artifact
 from .artifact.catalog import ArtifactCatalog, ArtifactRegistration
 from .artifact.discovery import discover_catalogs, reset_discovery
 from .artifact.header import ArtifactHeader, decode_header, encode_header
@@ -40,6 +40,8 @@ __all__ = [
     "ArtifactReference",
     "ArtifactRegistration",
     "ArtifactWriter",
+    "BoundReadArtifact",
+    "BoundWriteArtifact",
     "ConfigCodec",
     "ConfigurationSnapshot",
     "ExecutionContext",

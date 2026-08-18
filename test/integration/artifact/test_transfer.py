@@ -30,17 +30,21 @@ class TextWriter(ArtifactWriter):
         self.body.write(value.encode())
 
 
-class TextArtifact(Artifact[TextReader, TextWriter]):
-    reader = TextReader
-    writer = TextWriter
+def dump_text(reader: TextReader, destination: Path) -> None:
+    (destination / "text.txt").write_text(reader.read())
 
-    @classmethod
-    def dump(cls, reader: TextReader, destination: Path) -> None:
-        (destination / "text.txt").write_text(reader.read())
 
-    @classmethod
-    def load(cls, source: Path, writer: TextWriter) -> None:
-        writer.write((source / "text.txt").read_text())
+def load_text(source: Path, writer: TextWriter) -> None:
+    writer.write((source / "text.txt").read_text())
+
+
+TextArtifact = Artifact(
+    "Text",
+    reader=TextReader,
+    writer=TextWriter,
+    dump=dump_text,
+    load=load_text,
+)
 
 
 class BytesReader(ArtifactReader):
@@ -53,9 +57,7 @@ class BytesWriter(ArtifactWriter):
         self.body.write(value)
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +70,7 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     return value
 
 
-def create(path: Path, artifact: type[Artifact], value: object) -> None:
+def create(path: Path, artifact: Artifact, value: object) -> None:
     with Procedure("create", "1").execute():
         writer = artifact.create(path)
         writer.write(value)  # type: ignore[attr-defined]

@@ -20,7 +20,6 @@ from ..provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
-from .definition import Artifact
 from .discovery import discover_catalogs
 from .header import ArtifactHeader, decode_header, encode_header
 from .region import BodyRegion
@@ -136,12 +135,10 @@ def dump_artifact(
     source_path, destination_path = Path(source), Path(destination)
     header, body = _read_container(source_path)
     registration = _registration(header.artifact_identifier)
-    artifact_type = None if registration is None else registration.artifact
-    reader_type = None if artifact_type is None else artifact_type._resolve_reader()
+    artifact = None if registration is None else registration.artifact
+    reader_type = None if artifact is None else artifact.reader
     custom = (
-        artifact_type is not None
-        and artifact_type.dump.__func__ is not Artifact.dump.__func__
-        and artifact_type.load.__func__ is not Artifact.load.__func__
+        artifact is not None and artifact.dump is not None and artifact.load is not None
     )
     if representation == "custom" and not custom:
         raise ValueError("custom dump is not supported for this artifact")
@@ -154,7 +151,7 @@ def dump_artifact(
         region = BodyRegion(io.BytesIO(body), 0, len(body), owner)
         reader = reader_type(region, header)
         with activate_context(owner):
-            artifact_type.dump(reader, payload)
+            artifact.dump(reader, payload)
             reader.close()
         files = _file_records(payload)
         if not files:
@@ -240,10 +237,10 @@ def _custom_body(manifest: dict[str, Any], source: Path) -> bytes:
     registration = _registration(identifier)
     if registration is None:
         raise ValueError(f"artifact definition is unavailable: {identifier}")
-    artifact_type = registration.artifact
-    if artifact_type.load.__func__ is Artifact.load.__func__:
+    artifact = registration.artifact
+    if artifact.load is None:
         raise ValueError("custom load is not supported for this artifact")
-    writer_type = artifact_type._resolve_writer()
+    writer_type = artifact.writer
     owner = _Owner()
     stream = io.BytesIO()
     writer = writer_type(
@@ -251,7 +248,7 @@ def _custom_body(manifest: dict[str, Any], source: Path) -> bytes:
         _manifest_header(manifest),
     )
     with activate_context(owner):
-        artifact_type.load(source / "payload", writer)
+        artifact.load(source / "payload", writer)
         length = writer.body.length
         writer.close()
     return stream.getvalue()[:length]

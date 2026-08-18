@@ -29,9 +29,7 @@ class BytesWriter(ArtifactWriter):
         return self.body.write(value)
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
 
 
 @pytest.fixture(autouse=True)

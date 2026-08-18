@@ -40,9 +40,7 @@ def test_json_artifact_round_trips_generic_json_without_registration(
         assert inspector.inspect() == value
 
     header = decode_header(path.read_bytes())
-    assert header.artifact_identifier == (
-        f"{JsonArtifact.__module__}.{JsonArtifact.__qualname__}"
-    )
+    assert header.artifact_identifier == (JsonArtifact.default_identifier)
 
 
 def test_json_writer_uses_canonical_compact_encoding(

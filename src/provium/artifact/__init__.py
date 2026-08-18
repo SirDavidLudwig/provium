@@ -1,7 +1,7 @@
 """Artifact definitions, containers, catalogs, and I/O primitives."""
 
 from .catalog import ArtifactCatalog, ArtifactRegistration
-from .definition import Artifact, open_artifact
+from .definition import Artifact, BoundReadArtifact, BoundWriteArtifact, open_artifact
 from .discovery import discover_catalogs, reset_discovery
 from .header import ArtifactHeader, decode_header, encode_header
 from .prefab import JsonArtifact, JsonArtifactReader, JsonArtifactWriter
@@ -17,6 +17,8 @@ __all__ = [
     "ArtifactReader",
     "ArtifactRegistration",
     "ArtifactWriter",
+    "BoundReadArtifact",
+    "BoundWriteArtifact",
     "BodyRegion",
     "JsonArtifact",
     "JsonArtifactReader",

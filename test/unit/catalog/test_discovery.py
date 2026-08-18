@@ -17,14 +17,10 @@ class Writer(ArtifactWriter):
     pass
 
 
-class Integer(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
+Integer = Artifact("Integer", reader=Reader, writer=Writer)
 
 
-class Other(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
+Other = Artifact("Other", reader=Reader, writer=Writer)
 
 
 @dataclass
@@ -56,7 +52,7 @@ def isolated_discovery() -> None:
 
 def catalog(
     identifier: str,
-    artifact: type[Artifact],
+    artifact: Artifact,
     *,
     aliases: tuple[str, ...] = (),
 ) -> ArtifactCatalog:

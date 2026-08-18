@@ -23,20 +23,24 @@ transfer log in `manifest.json`.
 
 ## Custom representations
 
-Artifact readers and writers can define a compact or human-editable representation:
+Artifact definitions can provide a compact or human-editable representation:
 
 ```python
-class TextArtifact(Artifact[TextReader, TextWriter]):
-    reader = TextReader
-    writer = TextWriter
+def dump_text(reader: TextReader, destination: Path) -> None:
+    (destination / "text.txt").write_text(reader.read())
 
-    @classmethod
-    def dump(cls, reader: TextReader, destination: Path) -> None:
-        (destination / "text.txt").write_text(reader.read())
 
-    @classmethod
-    def load(cls, source: Path, writer: TextWriter) -> None:
-        writer.write((source / "text.txt").read_text())
+def load_text(source: Path, writer: TextWriter) -> None:
+    writer.write((source / "text.txt").read_text())
+
+
+TextArtifact = Artifact(
+    label="Text",
+    reader=TextReader,
+    writer=TextWriter,
+    dump=dump_text,
+    load=load_text,
+)
 ```
 
 The framework creates the payload directory, hashes every file, validates safe

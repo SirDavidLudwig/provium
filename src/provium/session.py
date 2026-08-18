@@ -10,10 +10,9 @@ from contextvars import Token
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from .artifact.catalog import ArtifactRegistration
-from .artifact.definition import artifact_class_identifier
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
     CONTAINER_VERSION,
@@ -144,14 +143,14 @@ class Session:
 
     def open_artifact(
         self,
-        artifact: type[Artifact],
+        artifact: Artifact,
         path: str | PathLike[str],
         reader_type: type[ArtifactReader],
     ) -> ArtifactReader:
         return self._open(path, requested=artifact, reader_type=reader_type)
 
     def open_unknown_artifact(
-        self, path: str | PathLike[str], expected: tuple[type[Artifact], ...] | None
+        self, path: str | PathLike[str], expected: tuple[Artifact, ...] | None
     ) -> ArtifactReader:
         return self._open(path, expected=expected)
 
@@ -159,9 +158,9 @@ class Session:
         self,
         path: str | PathLike[str],
         *,
-        requested: type[Artifact] | None = None,
+        requested: Artifact | None = None,
         reader_type: type[ArtifactReader] | None = None,
-        expected: tuple[type[Artifact], ...] | None = None,
+        expected: tuple[Artifact, ...] | None = None,
     ) -> ArtifactReader:
         stream = Path(path).open("rb")
         try:
@@ -171,26 +170,37 @@ class Session:
                 registration = catalog.resolve(header.artifact_identifier)
             except KeyError:
                 registration = None
+            resolved_artifact = None if registration is None else registration.artifact
             if requested is not None:
                 matches = (
                     registration is not None and registration.artifact is requested
                 ) or (
                     registration is None
-                    and header.artifact_identifier
-                    == artifact_class_identifier(requested)
+                    and header.artifact_identifier == requested.default_identifier
                 )
                 if not matches:
                     raise TypeError(  # noqa: TRY301
                         "artifact does not match the requested artifact type"
                     )
-            elif registration is None:
-                raise ValueError(  # noqa: TRY301
-                    f"unknown artifact identifier: {header.artifact_identifier}"
+                resolved_artifact = requested
+            elif resolved_artifact is None:
+                if expected is None:
+                    raise ValueError(  # noqa: TRY301
+                        f"unknown artifact identifier: {header.artifact_identifier}"
+                    )
+                resolved_artifact = next(
+                    (
+                        artifact
+                        for artifact in expected
+                        if artifact.default_identifier == header.artifact_identifier
+                    ),
+                    None,
                 )
-            if (
-                expected is not None
-                and cast(ArtifactRegistration, registration).artifact not in expected
-            ):
+                if resolved_artifact is None:
+                    raise TypeError(  # noqa: TRY301
+                        "artifact is outside the expected artifact types"
+                    )
+            if expected is not None and resolved_artifact not in expected:
                 raise TypeError(  # noqa: TRY301
                     "artifact is outside the expected artifact types"
                 )
@@ -226,10 +236,8 @@ class Session:
                 raise ValueError(  # noqa: TRY301
                     "artifact lineage body digest does not match header"
                 )
-            concrete_reader = (
-                reader_type
-                or cast(ArtifactRegistration, registration).artifact._resolve_reader()
-            )
+            assert resolved_artifact is not None
+            concrete_reader = reader_type or resolved_artifact.reader
             region = BodyRegion(
                 stream, header.body_offset, header.body_length, self, close_stream=True
             )

@@ -20,14 +20,14 @@ class IntegerWriter(ArtifactWriter):
     pass
 
 
-class Integer(Artifact[IntegerReader, IntegerWriter]):
-    reader = IntegerReader
-    writer = IntegerWriter
+Integer = Artifact("Integer", reader=IntegerReader, writer=IntegerWriter)
 
 
 def static_type_contract() -> None:
     assert_type(Integer.open("input.pa"), IntegerReader)
     assert_type(Integer.create("output.pa"), IntegerWriter)
+    assert_type(Integer.bind_read("input.pa").open(), IntegerReader)
+    assert_type(Integer.bind_write("output.pa").open(), IntegerWriter)
 
 
 class Settings:

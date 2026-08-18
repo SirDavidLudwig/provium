@@ -31,9 +31,7 @@ class BytesWriter(ArtifactWriter):
     pass
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
 
 
 class OtherReader(ArtifactReader):
@@ -44,9 +42,7 @@ class OtherWriter(ArtifactWriter):
     pass
 
 
-class OtherArtifact(Artifact[OtherReader, OtherWriter]):
-    reader = OtherReader
-    writer = OtherWriter
+OtherArtifact = Artifact("Other", reader=OtherReader, writer=OtherWriter)
 
 
 class BrokenReader(ArtifactReader):
@@ -54,9 +50,7 @@ class BrokenReader(ArtifactReader):
         raise RuntimeError("reader construction failed")
 
 
-class BrokenArtifact(Artifact[BrokenReader, OtherWriter]):
-    reader = BrokenReader
-    writer = OtherWriter
+BrokenArtifact = Artifact("Broken", reader=BrokenReader, writer=OtherWriter)
 
 
 @pytest.fixture
@@ -128,7 +122,7 @@ def test_opens_unregistered_artifact_with_concrete_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "value.pa"
-    identifier = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"
+    identifier = BytesArtifact.default_identifier
     reference, lineage = write_artifact(
         path,
         b"value",
@@ -153,7 +147,7 @@ def test_generic_open_still_requires_dynamic_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "value.pa"
-    identifier = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"
+    identifier = BytesArtifact.default_identifier
     write_artifact(path, b"value", identity="artifact-1", identifier=identifier)
     monkeypatch.setattr(
         "provium.procedure.discover_catalogs",
@@ -165,6 +159,46 @@ def test_generic_open_still_requires_dynamic_registration(
         pytest.raises(ValueError, match="unknown artifact identifier"),
     ):
         open_artifact(path)
+
+
+def test_expected_definition_opens_an_unregistered_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "value.pa"
+    write_artifact(
+        path,
+        b"value",
+        identity="artifact-1",
+        identifier=BytesArtifact.default_identifier,
+    )
+    monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
+
+    with Procedure("consume", "1").execute():
+        reader = open_artifact(path, expected=BytesArtifact)
+
+        assert isinstance(reader, BytesReader)
+        assert reader.read() == b"value"
+
+
+def test_expected_definition_rejects_a_different_unregistered_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "value.pa"
+    write_artifact(
+        path,
+        b"value",
+        identity="artifact-1",
+        identifier=BytesArtifact.default_identifier,
+    )
+    monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
+
+    with (
+        Procedure("consume", "1").execute(),
+        pytest.raises(TypeError, match="expected"),
+    ):
+        open_artifact(path, expected=OtherArtifact)
 
 
 def test_opens_dynamically_and_resolves_concrete_reader(

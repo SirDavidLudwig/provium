@@ -103,8 +103,9 @@ booleans, finite numbers, strings, arrays, and objects with string keys.
 
 ## Custom artifact types
 
-For an application-specific artifact format, define reader, writer, and artifact
-classes. Here is the same number workflow using signed 64-bit integers:
+For an application-specific artifact format, define reader and writer classes,
+then create an artifact definition. Here is the same number workflow using
+signed 64-bit integers:
 
 ```python
 import struct
@@ -124,9 +125,11 @@ class IntegerWriter(ArtifactWriter):
         self.body.write(INTEGER.pack(value))
 
 
-class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
-    reader = IntegerReader
-    writer = IntegerWriter
+IntegerArtifact = Artifact(
+    label="Integer",
+    reader=IntegerReader,
+    writer=IntegerWriter,
+)
 ```
 
 Use the custom type just like the prefab JSON artifact:
@@ -171,9 +174,10 @@ flowchart LR
     add --> total
 ```
 
-Registration is optional. Without it, Provium stores the artifact class's full
-path, such as `your_package.artifacts.IntegerArtifact`, as its identifier. Typed
-calls such as `IntegerArtifact.open()` can read these artifacts directly.
+Registration is optional. Without it, Provium derives an identifier from the
+reader module and artifact label. Set `identifier=` or register the definition
+when the identifier must remain stable across refactors.
+Typed calls such as `IntegerArtifact.open()` can read these artifacts directly.
 
 Register the artifact when you want a stable custom identifier, aliases, or
 dynamic loading through `provium.open_artifact()`:

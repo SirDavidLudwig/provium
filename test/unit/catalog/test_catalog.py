@@ -13,14 +13,10 @@ class Writer(ArtifactWriter):
     pass
 
 
-class Integer(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
+Integer = Artifact("Integer", reader=Reader, writer=Writer)
 
 
-class Other(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
+Other = Artifact("Other", reader=Reader, writer=Writer)
 
 
 def test_registers_and_resolves_canonical_identifier_and_aliases() -> None:
@@ -93,11 +89,11 @@ def test_rejects_alias_and_canonical_collisions_in_both_directions() -> None:
         catalog.register("example.OtherV1", Other, aliases=("example.IntegerV1",))
 
 
-def test_rejects_inconsistent_registration_of_same_artifact_class() -> None:
+def test_rejects_inconsistent_registration_of_same_artifact() -> None:
     catalog = ArtifactCatalog()
     catalog.register("example.IntegerV1", Integer)
 
-    with pytest.raises(ValueError, match="artifact class"):
+    with pytest.raises(ValueError, match="artifact"):
         catalog.register("example.IntegerV2", Integer)
 
 
@@ -117,6 +113,6 @@ def test_registration_validates_identifiers(
         ArtifactCatalog().register(identifier, Integer, aliases=aliases)
 
 
-def test_registration_requires_an_artifact_class() -> None:
+def test_registration_requires_an_artifact_instance() -> None:
     with pytest.raises(TypeError, match="Artifact"):
         ArtifactCatalog().register("example.InvalidV1", object)  # type: ignore[arg-type]

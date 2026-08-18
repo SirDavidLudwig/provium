@@ -37,14 +37,10 @@ class Writer(ArtifactWriter):
     pass
 
 
-class InspectingArtifact(Artifact[InspectingReader, Writer]):
-    reader = InspectingReader
-    writer = Writer
+InspectingArtifact = Artifact("Inspecting", reader=InspectingReader, writer=Writer)
 
 
-class PlainArtifact(Artifact[PlainReader, Writer]):
-    reader = PlainReader
-    writer = Writer
+PlainArtifact = Artifact("Plain", reader=PlainReader, writer=Writer)
 
 
 def write_artifact(path: Path, body: bytes = b"hello") -> ArtifactHeader:
