@@ -53,11 +53,9 @@ def isolated_discovery() -> None:
 def catalog(
     identifier: str,
     artifact: Artifact,
-    *,
-    aliases: tuple[str, ...] = (),
 ) -> ArtifactCatalog:
     result = ArtifactCatalog()
-    result.register(identifier, artifact, aliases=aliases)
+    result.register(identifier, artifact)
     return result
 
 
@@ -85,22 +83,18 @@ def test_discovers_one_catalog_and_uses_expected_entry_point_group(
     assert FakeEntryPoints.selected_groups == ["provium.catalogs"]
 
 
-def test_discovers_multiple_catalogs_and_resolves_aliases(
+def test_discovers_multiple_catalogs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     install_entry_points(
         monkeypatch,
-        catalog(
-            "example.IntegerV1",
-            Integer,
-            aliases=("example.LegacyIntegerV1",),
-        ),
+        catalog("example.IntegerV1", Integer),
         catalog("example.OtherV1", Other),
     )
 
     discovered = discover_catalogs()
 
-    assert discovered.resolve("example.LegacyIntegerV1").artifact is Integer
+    assert discovered.resolve("example.IntegerV1").artifact is Integer
     assert discovered.resolve("example.OtherV1").artifact is Other
     assert (
         discovered.registration_for(Integer).canonical_identifier == "example.IntegerV1"
@@ -120,40 +114,14 @@ def test_discovery_is_cached_until_reset(monkeypatch: pytest.MonkeyPatch) -> Non
     assert points[0].loads == 2
 
 
-@pytest.mark.parametrize(
-    ("first", "second", "message"),
-    [
-        (
-            catalog("example.SharedV1", Integer),
-            catalog("example.SharedV1", Other),
-            "canonical identifier",
-        ),
-        (
-            catalog("example.IntegerV1", Integer, aliases=("example.SharedV1",)),
-            catalog("example.OtherV1", Other, aliases=("example.SharedV1",)),
-            "alias",
-        ),
-        (
-            catalog("example.IntegerV1", Integer, aliases=("example.SharedV1",)),
-            catalog("example.SharedV1", Other),
-            "canonical identifier",
-        ),
-        (
-            catalog("example.SharedV1", Integer),
-            catalog("example.OtherV1", Other, aliases=("example.SharedV1",)),
-            "alias",
-        ),
-    ],
-)
 def test_detects_conflicts_across_catalogs(
     monkeypatch: pytest.MonkeyPatch,
-    first: ArtifactCatalog,
-    second: ArtifactCatalog,
-    message: str,
 ) -> None:
+    first = catalog("example.SharedV1", Integer)
+    second = catalog("example.SharedV1", Other)
     install_entry_points(monkeypatch, first, second)
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match="canonical identifier"):
         discover_catalogs()
 
 

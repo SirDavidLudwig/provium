@@ -179,7 +179,7 @@ reader module and artifact label. Set `identifier=` or register the definition
 when the identifier must remain stable across refactors.
 Typed calls such as `IntegerArtifact.open()` can read these artifacts directly.
 
-Register the artifact when you want a stable custom identifier, aliases, or
+Register the artifact when you want a stable custom identifier or
 dynamic loading through `provium.open_artifact()`:
 
 ```python

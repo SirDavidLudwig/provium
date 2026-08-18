@@ -29,7 +29,6 @@ def discover_catalogs() -> ArtifactCatalog:
             discovered.register(
                 registration.canonical_identifier,
                 registration.artifact,
-                aliases=registration.aliases,
             )
     _discovered_catalog = discovered
     return discovered

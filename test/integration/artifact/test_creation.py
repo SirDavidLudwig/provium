@@ -33,11 +33,7 @@ BytesArtifact = Artifact("Bytes", reader=BytesReader, writer=BytesWriter)
 @pytest.fixture(autouse=True)
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register(
-        "example.BytesV1",
-        BytesArtifact,
-        aliases=("example.LegacyBytesV1",),
-    )
+    catalog.register("example.BytesV1", BytesArtifact)
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 

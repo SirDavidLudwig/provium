@@ -8,18 +8,12 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
-    ArtifactHeader,
-    ArtifactLineage,
     ArtifactReader,
-    ArtifactRecord,
     ArtifactReference,
     ArtifactWriter,
     Procedure,
-    ProcedureExecutionRecord,
-    ProcedureRecord,
     decode_header,
     discover_catalogs,
-    encode_header,
     open_artifact,
     reset_discovery,
 )
@@ -40,11 +34,7 @@ TextArtifact = Artifact("Text", reader=TextReader, writer=TextWriter)
 
 def public_catalog() -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register(
-        "example.TextV1",
-        TextArtifact,
-        aliases=("example.LegacyTextV1",),
-    )
+    catalog.register("example.TextV1", TextArtifact)
     return catalog
 
 
@@ -103,42 +93,6 @@ def test_documented_public_api_workflow(
         ).identity
         == transform_execution.identity
     )
-    assert (
-        installed_catalog.resolve("example.LegacyTextV1").canonical_identifier
-        == "example.TextV1"
-    )
-
-
-def test_legacy_alias_opens_through_generic_public_api(
-    tmp_path: Path, installed_catalog: ArtifactCatalog
-) -> None:
-    path = tmp_path / "legacy.pa"
-    body = b"legacy"
-    reference = ArtifactReference("legacy-1", "example.LegacyTextV1")
-    execution = ProcedureExecutionRecord(
-        "legacy-execution",
-        ProcedureRecord("legacy-producer", "1"),
-        outputs=(reference,),
-    )
-    digest = hashlib.sha256(body).hexdigest()
-    lineage = ArtifactLineage.for_execution(
-        execution,
-        (ArtifactRecord(reference, digest, execution.identity),),
-    )
-    header = ArtifactHeader(
-        artifact_identifier=reference.artifact_identifier,
-        artifact_identity=reference.identity,
-        body_offset=4096,
-        body_length=len(body),
-        body_digest=digest,
-        lineage=lineage,
-    )
-    encoded = encode_header(header)
-    path.write_bytes(encoded + bytes(header.body_offset - len(encoded)) + body)
-
-    with Procedure("read", "1").execute():
-        reader = open_artifact(path, expected=TextArtifact)
-        assert reader.read_text() == "legacy"
 
 
 def test_public_handles_reject_later_execution_context(tmp_path: Path) -> None:

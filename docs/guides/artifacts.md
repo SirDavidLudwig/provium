@@ -41,8 +41,8 @@ objects represented using `repr()`.
 
 ## Register a stable identifier
 
-Registration is optional. Register a type when you want a stable identifier,
-aliases, or dynamic loading through `provium.open_artifact()`:
+Registration is optional. Register a type when you want a stable identifier or
+dynamic loading through `provium.open_artifact()`:
 
 ```python
 from provium import ArtifactCatalog

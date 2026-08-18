@@ -56,11 +56,7 @@ BrokenArtifact = Artifact("Broken", reader=BrokenReader, writer=OtherWriter)
 @pytest.fixture
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register(
-        "example.BytesV1",
-        BytesArtifact,
-        aliases=("example.LegacyBytesV1",),
-    )
+    catalog.register("example.BytesV1", BytesArtifact)
     catalog.register("example.OtherV1", OtherArtifact)
     catalog.register("example.BrokenV1", BrokenArtifact)
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
@@ -257,26 +253,6 @@ def test_typed_open_rejects_different_artifact_type(
         pytest.raises(TypeError, match="requested"),
     ):
         BytesArtifact.open(path)
-
-
-def test_resolves_legacy_alias(
-    tmp_path: Path, discovered_catalog: ArtifactCatalog
-) -> None:
-    path = tmp_path / "legacy.pa"
-    write_artifact(
-        path,
-        b"legacy",
-        identity="artifact-1",
-        identifier="example.LegacyBytesV1",
-    )
-
-    with Procedure("consume", "1").execute() as execution:
-        reader = open_artifact(path)
-
-        assert isinstance(reader, BytesReader)
-        assert (
-            execution.input_registrations[0].canonical_identifier == "example.BytesV1"
-        )
 
 
 def test_rejects_unknown_artifact_identifier(

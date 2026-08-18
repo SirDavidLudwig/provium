@@ -18,11 +18,10 @@ def _require_identifier(value: str, field_name: str) -> None:
 class ArtifactRegistration:
     canonical_identifier: str
     artifact: Artifact
-    aliases: tuple[str, ...] = ()
 
 
 class ArtifactCatalog:
-    """Map canonical identifiers and aliases to typed artifact definitions."""
+    """Map canonical identifiers to typed artifact definitions."""
 
     def __init__(self) -> None:
         self._identifiers: dict[str, ArtifactRegistration] = {}
@@ -32,31 +31,18 @@ class ArtifactCatalog:
         self,
         canonical_identifier: str,
         artifact: Artifact,
-        *,
-        aliases: tuple[str, ...] = (),
     ) -> ArtifactRegistration:
         _require_identifier(canonical_identifier, "canonical identifier")
         if not isinstance(artifact, Artifact):
             raise TypeError("artifact must be an Artifact instance")
-        for alias in aliases:
-            _require_identifier(alias, "alias")
-        if len(aliases) != len(set(aliases)):
-            raise ValueError("duplicate alias in registration")
-        if canonical_identifier in aliases:
-            raise ValueError("alias must differ from the canonical identifier")
         if canonical_identifier in self._identifiers:
             raise ValueError(
                 f"canonical identifier is already registered: {canonical_identifier}"
             )
         if artifact in self._artifacts:
             raise ValueError("artifact is already registered")
-        for alias in aliases:
-            if alias in self._identifiers:
-                raise ValueError(f"alias is already registered: {alias}")
-
-        registration = ArtifactRegistration(canonical_identifier, artifact, aliases)
+        registration = ArtifactRegistration(canonical_identifier, artifact)
         self._identifiers[canonical_identifier] = registration
-        self._identifiers.update((alias, registration) for alias in aliases)
         self._artifacts[artifact] = registration
         return registration
 
@@ -69,12 +55,7 @@ class ArtifactCatalog:
     @property
     def registrations(self) -> Mapping[str, ArtifactRegistration]:
         """Canonical registrations keyed by canonical identifier."""
-        return MappingProxyType(
-            {
-                registration.canonical_identifier: registration
-                for registration in self._artifacts.values()
-            }
-        )
+        return MappingProxyType(self._identifiers)
 
 
 __all__ = ["ArtifactCatalog", "ArtifactRegistration"]
