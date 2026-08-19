@@ -1,5 +1,6 @@
 """Provium's command-line entry point."""
 
+from .catalog import CommandCatalog
 from .command import Command
 
 
@@ -8,4 +9,4 @@ def main() -> int:
     return 0
 
 
-__all__ = ["Command", "main"]
+__all__ = ["Command", "CommandCatalog", "main"]
