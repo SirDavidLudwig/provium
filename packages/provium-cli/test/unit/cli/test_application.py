@@ -5,7 +5,14 @@ import argparse
 import pytest
 
 from provium import __version__
-from provium_cli import Command, CommandCatalog, create_parser, main, run
+from provium_cli import (
+    Command,
+    CommandCatalog,
+    create_parser,
+    main,
+    run,
+)
+from provium_cli import __version__ as cli_version
 
 
 class ExampleCommand(Command):
@@ -111,7 +118,9 @@ def test_parser_prints_the_installed_version(
         create_parser(CommandCatalog()).parse_args(["--version"])
 
     assert exit_info.value.code == 0
-    assert capsys.readouterr().out == f"provium {__version__}\n"
+    assert capsys.readouterr().out == (
+        f"provium {__version__}\nprovium-cli {cli_version}\n"
+    )
 
 
 def test_main_uses_process_arguments(monkeypatch: pytest.MonkeyPatch) -> None:

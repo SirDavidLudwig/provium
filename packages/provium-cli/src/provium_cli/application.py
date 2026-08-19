@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from importlib.metadata import version as distribution_version
 
-from provium import __version__
+from provium import __version__ as core_version
 
 from .catalog import CommandCatalog
 from .discovery import discover_command_catalogs
@@ -16,11 +17,16 @@ _COMMAND_DESTINATION = "_provium_command"
 
 def create_parser(catalog: CommandCatalog) -> argparse.ArgumentParser:
     """Create a parser containing the commands in a catalog."""
-    parser = argparse.ArgumentParser(prog="provium")
+    parser = argparse.ArgumentParser(
+        prog="provium",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {__version__}",
+        version=(
+            f"provium {core_version}\nprovium-cli {distribution_version('provium-cli')}"
+        ),
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
     for command_type in catalog.commands.values():
