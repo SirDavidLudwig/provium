@@ -2,6 +2,7 @@
 
 from .catalog import CommandCatalog
 from .command import Command
+from .discovery import discover_command_catalogs, reset_command_discovery
 
 
 def main() -> int:
@@ -9,4 +10,10 @@ def main() -> int:
     return 0
 
 
-__all__ = ["Command", "CommandCatalog", "main"]
+__all__ = [
+    "Command",
+    "CommandCatalog",
+    "discover_command_catalogs",
+    "main",
+    "reset_command_discovery",
+]
