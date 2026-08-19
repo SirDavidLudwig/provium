@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import struct
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from provium import Artifact, ArtifactCatalog, ArtifactReader, ArtifactWriter, Procedure
+from provium import (
+    Artifact,
+    ArtifactCatalog,
+    ArtifactDefinition,
+    ArtifactReader,
+    ArtifactWriter,
+    Procedure,
+)
 
 
 class StreamingReader(ArtifactReader):
@@ -23,9 +29,9 @@ class StreamingWriter(ArtifactWriter):
         self.body.write(value)
 
 
-class StreamingArtifact(Artifact[StreamingReader, StreamingWriter]):
-    reader = StreamingReader
-    writer = StreamingWriter
+StreamingArtifact = Artifact(
+    "example.StreamingV1", "Streaming", StreamingReader, StreamingWriter
+)
 
 
 class IndexedReader(ArtifactReader):
@@ -58,16 +64,22 @@ class IndexedWriter(ArtifactWriter):
         self.body.write(struct.pack(">Q", index_offset))
 
 
-class IndexedArtifact(Artifact[IndexedReader, IndexedWriter]):
-    reader = IndexedReader
-    writer = IndexedWriter
+IndexedArtifact = Artifact("example.IndexedV1", "Indexed", IndexedReader, IndexedWriter)
 
 
 @pytest.fixture
 def smart_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.StreamingV1", StreamingArtifact)
-    catalog.register("example.IndexedV1", IndexedArtifact)
+    catalog.register(
+        ArtifactDefinition(
+            "example.StreamingV1", f"{__name__}:StreamingArtifact", "Streaming."
+        )
+    )
+    catalog.register(
+        ArtifactDefinition(
+            "example.IndexedV1", f"{__name__}:IndexedArtifact", "Indexed."
+        )
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 
@@ -113,34 +125,21 @@ def test_indexed_writer_backpatches_and_reader_seeks_directly_to_subset(
         assert reader.body.tell() < reader.body.length
 
 
-def test_reader_and_writer_provider_modules_load_lazily_and_cache_independently(
+def test_artifact_definition_exposes_concrete_reader_and_writer_types(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    reader_module = "test.support.integration.lazy_reader"
-    writer_module = "test.support.integration.lazy_writer"
-    sys.modules.pop(reader_module, None)
-    sys.modules.pop(writer_module, None)
-    from test.support.integration.lazy_artifact import LazyArtifact
+    from test.support.integration.lazy_reader import LazyReader
+    from test.support.integration.lazy_writer import LazyWriter
 
-    LazyArtifact._reader_type_cache = None
-    LazyArtifact._writer_type_cache = None
-    catalog = ArtifactCatalog()
-    catalog.register("example.LazyV1", LazyArtifact)
-    monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
+    LazyArtifact = Artifact("example.LazyV1", "Lazy", LazyReader, LazyWriter)
+    monkeypatch.setattr("provium.procedure.discover_catalogs", ArtifactCatalog)
 
-    assert reader_module not in sys.modules
-    assert writer_module not in sys.modules
     path = tmp_path / "lazy.pa"
     with Procedure("write", "1").execute():
         writer = LazyArtifact.create(path)
         writer.write(b"lazy")
-    assert writer_module in sys.modules
-    assert reader_module not in sys.modules
-
-    writer_type = LazyArtifact._resolve_writer()
     with Procedure("read", "1").execute():
         reader = LazyArtifact.open(path)
         assert reader.read() == b"lazy"
-    assert reader_module in sys.modules
-    assert LazyArtifact._resolve_writer() is writer_type
-    assert LazyArtifact._resolve_reader() is type(reader)
+    assert LazyArtifact.writer is LazyWriter
+    assert LazyArtifact.reader is type(reader)

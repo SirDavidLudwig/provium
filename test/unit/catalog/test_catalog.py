@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from provium import Artifact, ArtifactCatalog, ArtifactReader, ArtifactWriter
+from provium import (
+    Artifact,
+    ArtifactCatalog,
+    ArtifactDefinition,
+    ArtifactReader,
+    ArtifactWriter,
+)
 
 
 class Reader(ArtifactReader):
@@ -13,110 +21,104 @@ class Writer(ArtifactWriter):
     pass
 
 
-class Integer(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
+Integer = Artifact("example.IntegerV1", "Integer", Reader, Writer)
+Other = Artifact("example.OtherV1", "Other", Reader, Writer)
+IntegerDefinition = ArtifactDefinition(
+    "example.IntegerV1",
+    "example.artifacts:Integer",
+    "An integer artifact.",
+)
 
 
-class Other(Artifact[Reader, Writer]):
-    reader = Reader
-    writer = Writer
-
-
-def test_registers_and_resolves_canonical_identifier_and_aliases() -> None:
+def test_registers_and_resolves_definition_without_loading_target() -> None:
     catalog = ArtifactCatalog()
 
-    registration = catalog.register(
-        "example.IntegerV1",
-        Integer,
-        aliases=("example.LegacyIntegerV1", "example.OldIntegerV1"),
+    registered = catalog.register(IntegerDefinition)
+
+    assert registered is IntegerDefinition
+    assert catalog.resolve("example.IntegerV1") is IntegerDefinition
+    assert dict(catalog.definitions) == {"example.IntegerV1": IntegerDefinition}
+
+
+def test_definition_resolves_and_validates_its_lazy_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    imports: list[str] = []
+
+    def import_module(name: str) -> object:
+        imports.append(name)
+        return SimpleNamespace(nested=SimpleNamespace(Integer=Integer))
+
+    monkeypatch.setattr("provium.artifact.catalog.import_module", import_module)
+    definition = ArtifactDefinition[Artifact[Reader, Writer]](
+        "example.IntegerV1", "example.artifacts:nested.Integer", "An integer."
     )
 
-    assert registration.canonical_identifier == "example.IntegerV1"
-    assert registration.artifact is Integer
-    assert registration.aliases == (
-        "example.LegacyIntegerV1",
-        "example.OldIntegerV1",
-    )
-    assert catalog.resolve("example.IntegerV1") is registration
-    assert catalog.resolve("example.LegacyIntegerV1") is registration
-    assert catalog.resolve("example.OldIntegerV1") is registration
-    assert catalog.registration_for(Integer) is registration
-
-
-def test_alias_resolution_retains_canonical_registration() -> None:
-    catalog = ArtifactCatalog()
-    registration = catalog.register(
-        "example.IntegerV1",
-        Integer,
-        aliases=("example.LegacyIntegerV1",),
-    )
-
-    resolved = catalog.resolve("example.LegacyIntegerV1")
-
-    assert resolved.canonical_identifier == registration.canonical_identifier
-    assert resolved.artifact is Integer
-
-
-def test_unknown_identifiers_and_artifacts_are_not_registered() -> None:
-    catalog = ArtifactCatalog()
-
-    with pytest.raises(KeyError):
-        catalog.resolve("example.UnknownV1")
-    with pytest.raises(KeyError):
-        catalog.registration_for(Integer)
-
-
-def test_rejects_duplicate_canonical_identifier() -> None:
-    catalog = ArtifactCatalog()
-    catalog.register("example.IntegerV1", Integer)
-
-    with pytest.raises(ValueError, match="canonical identifier"):
-        catalog.register("example.IntegerV1", Other)
-
-
-def test_rejects_duplicate_alias() -> None:
-    catalog = ArtifactCatalog()
-    catalog.register("example.IntegerV1", Integer, aliases=("example.LegacyV1",))
-
-    with pytest.raises(ValueError, match="alias"):
-        catalog.register("example.OtherV1", Other, aliases=("example.LegacyV1",))
-
-
-def test_rejects_alias_and_canonical_collisions_in_both_directions() -> None:
-    catalog = ArtifactCatalog()
-    catalog.register("example.IntegerV1", Integer, aliases=("example.LegacyV1",))
-
-    with pytest.raises(ValueError, match="canonical identifier"):
-        catalog.register("example.LegacyV1", Other)
-    with pytest.raises(ValueError, match="alias"):
-        catalog.register("example.OtherV1", Other, aliases=("example.IntegerV1",))
-
-
-def test_rejects_inconsistent_registration_of_same_artifact_class() -> None:
-    catalog = ArtifactCatalog()
-    catalog.register("example.IntegerV1", Integer)
-
-    with pytest.raises(ValueError, match="artifact class"):
-        catalog.register("example.IntegerV2", Integer)
+    assert imports == []
+    assert definition.resolve() is Integer
+    assert imports == ["example.artifacts"]
 
 
 @pytest.mark.parametrize(
-    ("identifier", "aliases", "message"),
+    ("resolved", "error", "message"),
     [
-        ("", (), "identifier"),
-        ("example.IntegerV1", ("",), "alias"),
-        ("example.IntegerV1", ("same", "same"), "duplicate alias"),
-        ("example.IntegerV1", ("example.IntegerV1",), "alias"),
+        (object(), TypeError, "Artifact"),
+        (Other, ValueError, "identifier"),
     ],
 )
-def test_registration_validates_identifiers(
-    identifier: str, aliases: tuple[str, ...], message: str
+def test_definition_rejects_an_invalid_resolved_target(
+    monkeypatch: pytest.MonkeyPatch,
+    resolved: object,
+    error: type[Exception],
+    message: str,
+) -> None:
+    monkeypatch.setattr(
+        "provium.artifact.catalog.import_module",
+        lambda name: SimpleNamespace(value=resolved),
+    )
+    definition = ArtifactDefinition(
+        "example.IntegerV1", "example.artifacts:value", "An integer."
+    )
+
+    with pytest.raises(error, match=message):
+        definition.resolve()
+
+
+@pytest.mark.parametrize(
+    ("identifier", "target", "description", "message"),
+    [
+        ("", "example.artifacts:value", "Description", "identifier"),
+        ("example.IntegerV1", "", "Description", "target"),
+        ("example.IntegerV1", "example.artifacts:value", "", "description"),
+        ("example.IntegerV1", "missing-colon", "Description", "module:attribute"),
+        ("example.IntegerV1", ":value", "Description", "module:attribute"),
+        ("example.IntegerV1", "example.artifacts:", "Description", "module:attribute"),
+    ],
+)
+def test_definition_validates_its_schema(
+    identifier: str, target: str, description: str, message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        ArtifactCatalog().register(identifier, Integer, aliases=aliases)
+        ArtifactDefinition(identifier, target, description)
 
 
-def test_registration_requires_an_artifact_class() -> None:
-    with pytest.raises(TypeError, match="Artifact"):
-        ArtifactCatalog().register("example.InvalidV1", object)  # type: ignore[arg-type]
+def test_unknown_identifier_is_not_registered() -> None:
+    with pytest.raises(KeyError):
+        ArtifactCatalog().resolve("example.UnknownV1")
+
+
+def test_rejects_duplicate_identifier() -> None:
+    catalog = ArtifactCatalog()
+    catalog.register(IntegerDefinition)
+
+    with pytest.raises(ValueError, match="identifier"):
+        catalog.register(
+            ArtifactDefinition(
+                "example.IntegerV1", "example.artifacts:Other", "Another artifact."
+            )
+        )
+
+
+def test_registration_requires_a_definition() -> None:
+    with pytest.raises(TypeError, match="ArtifactDefinition"):
+        ArtifactCatalog().register(Integer)  # type: ignore[arg-type]

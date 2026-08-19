@@ -8,6 +8,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactHeader,
     ArtifactReader,
     ArtifactWriter,
@@ -27,18 +28,14 @@ class BytesWriter(ArtifactWriter):
         return self.body.write(value)
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @pytest.fixture(autouse=True)
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
     catalog.register(
-        "example.BytesV1",
-        BytesArtifact,
-        aliases=("example.LegacyBytesV1",),
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
     )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
@@ -78,6 +75,25 @@ def test_streams_body_and_force_finalizes_writer_on_exit(tmp_path: Path) -> None
     assert writer.closed
     assert writer.container_finalized
     assert read_body(path)[1] == b"abcdef"
+
+
+def test_streams_body_through_a_temporary_disk_file(tmp_path: Path) -> None:
+    path = tmp_path / "large.pa"
+    body = b"x" * (2 * 1024 * 1024)
+
+    with Procedure("create", "1").execute() as execution:
+        writer = BytesArtifact.create(path)
+        writer.write(body)
+        pending = execution._pending_outputs[0]
+        assert not path.exists()
+        assert pending.temporary_path.exists()
+        assert (
+            pending.temporary_path.stat().st_size
+            == writer.metadata.body_offset + len(body)
+        )
+
+    assert path.stat().st_size == writer.metadata.body_offset + len(body)
+    assert not pending.temporary_path.exists()
 
 
 def test_seek_and_backpatch_digest_final_actual_bytes(tmp_path: Path) -> None:
@@ -160,6 +176,22 @@ def test_multiple_outputs_share_execution_and_complete_io_sets(tmp_path: Path) -
     assert first_header.lineage == second_header.lineage
 
 
+def test_rejects_duplicate_output_destinations_in_one_execution(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "duplicate.pa"
+
+    with Procedure("duplicate", "1").execute() as execution:
+        first = BytesArtifact.create(path)
+        first.write(b"first")
+        with pytest.raises(ValueError, match="destination"):
+            BytesArtifact.create(path)
+        assert execution.writers == (first,)
+
+    assert read_body(path)[1] == b"first"
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
 def test_new_provenance_uses_canonical_identifier(tmp_path: Path) -> None:
     path = tmp_path / "canonical.pa"
 
@@ -171,7 +203,7 @@ def test_new_provenance_uses_canonical_identifier(tmp_path: Path) -> None:
     assert record.reference.artifact_identifier == "example.BytesV1"
 
 
-def test_unregistered_artifact_uses_full_class_path(
+def test_imperative_artifact_uses_its_required_identifier(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -186,7 +218,7 @@ def test_unregistered_artifact_uses_full_class_path(
         writer.write(b"value")
 
     header, body = read_body(path)
-    expected = f"{BytesArtifact.__module__}.{BytesArtifact.__qualname__}"
+    expected = BytesArtifact.identifier
     assert body == b"value"
     assert header.artifact_identifier == expected
     assert header.lineage.artifacts[writer.identity].reference.artifact_identifier == (

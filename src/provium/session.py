@@ -10,10 +10,9 @@ from contextvars import Token
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from .artifact.catalog import ArtifactRegistration
-from .artifact.definition import artifact_class_identifier
+from .artifact.catalog import ArtifactDefinition
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
     CONTAINER_VERSION,
@@ -58,7 +57,7 @@ class Session:
     _inputs: dict[str, ArtifactRecord] = field(default_factory=dict)
     _readers: list[ArtifactReader] = field(default_factory=list)
     _input_lineage: ArtifactLineage = field(default_factory=ArtifactLineage)
-    _input_registrations: list[ArtifactRegistration] = field(default_factory=list)
+    _input_definitions: list[ArtifactDefinition] = field(default_factory=list)
     _discover_catalogs: Callable[[], Any] | None = None
     _managed_resources: list[Any] = field(default_factory=list)
 
@@ -138,20 +137,20 @@ class Session:
         return self.parent.input_lineage.merge(self._input_lineage)
 
     @property
-    def input_registrations(self) -> tuple[ArtifactRegistration, ...]:
-        inherited = () if self.parent is None else self.parent.input_registrations
-        return (*inherited, *self._input_registrations)
+    def input_definitions(self) -> tuple[ArtifactDefinition, ...]:
+        inherited = () if self.parent is None else self.parent.input_definitions
+        return (*inherited, *self._input_definitions)
 
     def open_artifact(
         self,
-        artifact: type[Artifact],
+        artifact: Artifact,
         path: str | PathLike[str],
         reader_type: type[ArtifactReader],
     ) -> ArtifactReader:
         return self._open(path, requested=artifact, reader_type=reader_type)
 
     def open_unknown_artifact(
-        self, path: str | PathLike[str], expected: tuple[type[Artifact], ...] | None
+        self, path: str | PathLike[str], expected: tuple[Artifact, ...] | None
     ) -> ArtifactReader:
         return self._open(path, expected=expected)
 
@@ -159,41 +158,43 @@ class Session:
         self,
         path: str | PathLike[str],
         *,
-        requested: type[Artifact] | None = None,
+        requested: Artifact | None = None,
         reader_type: type[ArtifactReader] | None = None,
-        expected: tuple[type[Artifact], ...] | None = None,
+        expected: tuple[Artifact, ...] | None = None,
     ) -> ArtifactReader:
         stream = Path(path).open("rb")
         try:
             header, file_length = _read_header_from_stream(stream)
             catalog = (self._discover_catalogs or discover_catalogs)()
             try:
-                registration = catalog.resolve(header.artifact_identifier)
+                definition = catalog.resolve(header.artifact_identifier)
             except KeyError:
-                registration = None
+                definition = None
             if requested is not None:
-                matches = (
-                    registration is not None and registration.artifact is requested
-                ) or (
-                    registration is None
-                    and header.artifact_identifier
-                    == artifact_class_identifier(requested)
-                )
-                if not matches:
+                if header.artifact_identifier != requested.identifier:
                     raise TypeError(  # noqa: TRY301
                         "artifact does not match the requested artifact type"
                     )
-            elif registration is None:
-                raise ValueError(  # noqa: TRY301
-                    f"unknown artifact identifier: {header.artifact_identifier}"
+                resolved_artifact = requested
+            elif expected is not None:
+                resolved_artifact = next(
+                    (
+                        artifact
+                        for artifact in expected
+                        if artifact.identifier == header.artifact_identifier
+                    ),
+                    None,
                 )
-            if (
-                expected is not None
-                and cast(ArtifactRegistration, registration).artifact not in expected
-            ):
-                raise TypeError(  # noqa: TRY301
-                    "artifact is outside the expected artifact types"
-                )
+                if resolved_artifact is None:
+                    raise TypeError(  # noqa: TRY301
+                        "artifact is outside the expected artifact types"
+                    )
+            else:
+                if definition is None:
+                    raise ValueError(  # noqa: TRY301
+                        f"unknown artifact identifier: {header.artifact_identifier}"
+                    )
+                resolved_artifact = definition.resolve()
             metadata_end = header.metadata_offset + header.metadata_length
             if header.body_offset < metadata_end:
                 raise ValueError(  # noqa: TRY301
@@ -226,10 +227,8 @@ class Session:
                 raise ValueError(  # noqa: TRY301
                     "artifact lineage body digest does not match header"
                 )
-            concrete_reader = (
-                reader_type
-                or cast(ArtifactRegistration, registration).artifact._resolve_reader()
-            )
+            assert resolved_artifact is not None
+            concrete_reader = reader_type or resolved_artifact.reader
             region = BodyRegion(
                 stream, header.body_offset, header.body_length, self, close_stream=True
             )
@@ -240,8 +239,8 @@ class Session:
         self._readers.append(reader)
         self._inputs.setdefault(record.reference.identity, record)
         self._input_lineage = self._input_lineage.merge(header.lineage)
-        if registration is not None:
-            self._input_registrations.append(registration)
+        if definition is not None:
+            self._input_definitions.append(definition)
         return reader
 
 

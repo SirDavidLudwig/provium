@@ -1,73 +1,55 @@
-"""Generic typed artifact definitions and lazy provider resolution."""
+"""Typed artifact definitions and path binding."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
-from typing import Any, ClassVar, cast, overload
+from typing import cast, overload
 
 from ..context import current_context, current_execution_context
 from .reader import ArtifactReader
 from .writer import ArtifactWriter
 
 
-def artifact_class_identifier(artifact: type[Artifact]) -> str:
-    """Return the default persistent identifier for an artifact class."""
-    return f"{artifact.__module__}.{artifact.__qualname__}"
+def _path(value: str | PathLike[str]) -> Path:
+    if not isinstance(value, (str, PathLike)):
+        raise TypeError("artifact path must be a string or path-like object")
+    return Path(value)
 
 
+@dataclass(frozen=True, slots=True, eq=False)
 class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
-    """Bind a logical artifact type to its concrete reader and writer types."""
+    """An immutable artifact reader and writer implementation."""
 
-    reader: type[ReaderT] | Callable[[], type[ReaderT]]
-    writer: type[WriterT] | Callable[[], type[WriterT]]
-    _reader_type_cache: ClassVar[type[ArtifactReader] | None] = None
-    _writer_type_cache: ClassVar[type[ArtifactWriter] | None] = None
+    identifier: str
+    label: str
+    reader: type[ReaderT]
+    writer: type[WriterT]
+    dump: Callable[[ReaderT, Path], None] | None = None
+    load: Callable[[Path, WriterT], None] | None = None
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-        cls._reader_type_cache = None
-        cls._writer_type_cache = None
+    def __post_init__(self) -> None:
+        if not isinstance(self.identifier, str) or not self.identifier:
+            raise ValueError("artifact identifier must be a non-empty string")
+        if not isinstance(self.label, str) or not self.label:
+            raise ValueError("artifact label must be a non-empty string")
+        if not isinstance(self.reader, type) or not issubclass(
+            self.reader, ArtifactReader
+        ):
+            raise TypeError("artifact reader must be an ArtifactReader type")
+        if not isinstance(self.writer, type) or not issubclass(
+            self.writer, ArtifactWriter
+        ):
+            raise TypeError("artifact writer must be an ArtifactWriter type")
+        if self.dump is not None and not callable(self.dump):
+            raise TypeError("artifact dump must be callable")
+        if self.load is not None and not callable(self.load):
+            raise TypeError("artifact load must be callable")
 
-    @classmethod
-    def _resolve_reader(cls) -> type[ReaderT]:
-        cached = cls._reader_type_cache
-        if cached is not None:
-            return cast(type[ReaderT], cached)
-        provider = getattr(cls, "reader", None)
-        candidate = (
-            provider
-            if isinstance(provider, type)
-            else provider()
-            if callable(provider)
-            else None
-        )
-        if not isinstance(candidate, type) or not issubclass(candidate, ArtifactReader):
-            raise TypeError("reader provider must resolve to an ArtifactReader type")
-        cls._reader_type_cache = candidate
-        return cast(type[ReaderT], candidate)
-
-    @classmethod
-    def _resolve_writer(cls) -> type[WriterT]:
-        cached = cls._writer_type_cache
-        if cached is not None:
-            return cast(type[WriterT], cached)
-        provider = getattr(cls, "writer", None)
-        candidate = (
-            provider
-            if isinstance(provider, type)
-            else provider()
-            if callable(provider)
-            else None
-        )
-        if not isinstance(candidate, type) or not issubclass(candidate, ArtifactWriter):
-            raise TypeError("writer provider must resolve to an ArtifactWriter type")
-        cls._writer_type_cache = candidate
-        return cast(type[WriterT], candidate)
-
-    @classmethod
-    def open(cls, path: str | PathLike[str]) -> ReaderT:
+    def open(self, path: str | PathLike[str]) -> ReaderT:
+        artifact_path = _path(path)
         context = current_context()
         if context is None:
             raise RuntimeError(
@@ -76,30 +58,45 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
         opener = getattr(context, "open_artifact", None)
         if not callable(opener):
             raise TypeError("active context does not support artifact opening")
-        return cast(ReaderT, opener(cls, path, cls._resolve_reader()))
+        return cast(ReaderT, opener(self, artifact_path, self.reader))
 
-    @classmethod
-    def create(cls, path: str | PathLike[str]) -> WriterT:
+    def create(self, path: str | PathLike[str]) -> WriterT:
+        artifact_path = _path(path)
         context = current_execution_context() or current_context()
         if context is None:
             raise RuntimeError("artifact creation requires an active execution context")
         creator = getattr(context, "create_artifact", None)
         if not callable(creator):
             raise TypeError("active context does not support artifact creating")
-        return cast(WriterT, creator(cls, path, cls._resolve_writer()))
+        return cast(WriterT, creator(self, artifact_path, self.writer))
 
-    @classmethod
-    def dump(cls, reader: ReaderT, destination: Path) -> None:
-        """Dump a reader into a custom portable representation."""
-        raise NotImplementedError("custom dump is not supported")
+    def bind_read(
+        self, path: str | PathLike[str]
+    ) -> BoundReadArtifact[ReaderT, WriterT]:
+        return BoundReadArtifact(self, _path(path))
 
-    @classmethod
-    def load(cls, source: Path, writer: WriterT) -> None:
-        """Load a custom portable representation into a writer."""
-        raise NotImplementedError("custom load is not supported")
+    def bind_write(
+        self, path: str | PathLike[str]
+    ) -> BoundWriteArtifact[ReaderT, WriterT]:
+        return BoundWriteArtifact(self, _path(path))
 
 
-__all__ = ["Artifact", "artifact_class_identifier"]
+@dataclass(frozen=True, slots=True)
+class BoundReadArtifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
+    artifact: Artifact[ReaderT, WriterT]
+    path: Path
+
+    def open(self) -> ReaderT:
+        return self.artifact.open(self.path)
+
+
+@dataclass(frozen=True, slots=True)
+class BoundWriteArtifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
+    artifact: Artifact[ReaderT, WriterT]
+    path: Path
+
+    def open(self) -> WriterT:
+        return self.artifact.create(self.path)
 
 
 @overload
@@ -110,7 +107,7 @@ def open_artifact(path: str | PathLike[str]) -> ArtifactReader: ...
 def open_artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter](
     path: str | PathLike[str],
     *,
-    expected: type[Artifact[ReaderT, WriterT]],
+    expected: Artifact[ReaderT, WriterT],
 ) -> ReaderT: ...
 
 
@@ -118,16 +115,17 @@ def open_artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter](
 def open_artifact(
     path: str | PathLike[str],
     *,
-    expected: tuple[type[Artifact], ...],
+    expected: tuple[Artifact, ...],
 ) -> ArtifactReader: ...
 
 
 def open_artifact(
     path: str | PathLike[str],
     *,
-    expected: type[Artifact] | tuple[type[Artifact], ...] | None = None,
+    expected: Artifact | tuple[Artifact, ...] | None = None,
 ) -> ArtifactReader:
     """Open an artifact whose concrete type will be discovered from its header."""
+    artifact_path = _path(path)
     context = current_context()
     if context is None:
         raise RuntimeError(
@@ -139,7 +137,12 @@ def open_artifact(
     expected_types = None
     if expected is not None:
         expected_types = expected if isinstance(expected, tuple) else (expected,)
-    return cast(ArtifactReader, opener(path, expected_types))
+    return cast(ArtifactReader, opener(artifact_path, expected_types))
 
 
-__all__.append("open_artifact")
+__all__ = [
+    "Artifact",
+    "BoundReadArtifact",
+    "BoundWriteArtifact",
+    "open_artifact",
+]

@@ -103,13 +103,16 @@ booleans, finite numbers, strings, arrays, and objects with string keys.
 
 ## Custom artifact types
 
-For an application-specific artifact format, define reader, writer, and artifact
-classes. Here is the same number workflow using signed 64-bit integers:
+For an application-specific artifact format, define reader and writer classes,
+then create an artifact instance. Here is the same number workflow using
+signed 64-bit integers:
 
 ```python
 import struct
 
 from provium import Artifact, ArtifactReader, ArtifactWriter
+
+from .definitions import INTEGER_ARTIFACT
 
 INTEGER = struct.Struct(">q")
 
@@ -124,9 +127,12 @@ class IntegerWriter(ArtifactWriter):
         self.body.write(INTEGER.pack(value))
 
 
-class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
-    reader = IntegerReader
-    writer = IntegerWriter
+IntegerArtifact = Artifact(
+    identifier=INTEGER_ARTIFACT.identifier,
+    label="Integer",
+    reader=IntegerReader,
+    writer=IntegerWriter,
+)
 ```
 
 Use the custom type just like the prefab JSON artifact:
@@ -159,10 +165,10 @@ artifacts. Identities are again shortened in the diagram:
 ```mermaid
 flowchart LR
     source(["source 1<br/>source-execution"])
-    left["your_package.artifacts.IntegerArtifact<br/>left-id"]
-    right["your_package.artifacts.IntegerArtifact<br/>right-id"]
+    left["example.IntegerV1<br/>left-id"]
+    right["example.IntegerV1<br/>right-id"]
     add(["add 1<br/>add-execution"])
-    total["your_package.artifacts.IntegerArtifact<br/>sum-id"]
+    total["example.IntegerV1<br/>sum-id"]
 
     source --> left
     source --> right
@@ -171,20 +177,23 @@ flowchart LR
     add --> total
 ```
 
-Registration is optional. Without it, Provium stores the artifact class's full
-path, such as `your_package.artifacts.IntegerArtifact`, as its identifier. Typed
-calls such as `IntegerArtifact.open()` can read these artifacts directly.
+Every artifact carries a required persistent identifier, so typed calls such as
+`IntegerArtifact.open()` work without catalog discovery.
 
-Register the artifact when you want a stable custom identifier, aliases, or
-dynamic loading through `provium.open_artifact()`:
+Register a lightweight definition when you want dynamic loading through
+`provium.open_artifact()`:
 
 ```python
-from provium import ArtifactCatalog
+from provium import ArtifactCatalog, ArtifactDefinition
 
-from .artifacts import IntegerArtifact
+INTEGER_ARTIFACT = ArtifactDefinition(
+    identifier="example.IntegerV1",
+    target="your_package.artifacts:IntegerArtifact",
+    description="A signed 64-bit integer.",
+)
 
 catalog = ArtifactCatalog()
-catalog.register("example.IntegerV1", IntegerArtifact)
+catalog.register(INTEGER_ARTIFACT)
 ```
 
 Expose that catalog from `pyproject.toml` so Provium can discover it:

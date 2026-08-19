@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import hashlib
-import io
 from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
 from types import GenericAlias
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 from uuid import uuid4
 
-from .artifact.catalog import ArtifactRegistration
-from .artifact.definition import artifact_class_identifier
+from .artifact.catalog import ArtifactDefinition
 from .artifact.discovery import discover_catalogs
 from .artifact.header import (
     ArtifactHeader,
@@ -55,7 +53,8 @@ _direct_executions: ContextVar[dict[int, Any]] = ContextVar(
 @dataclass(slots=True)
 class _PendingOutput:
     path: Path
-    stream: io.BytesIO
+    temporary_path: Path
+    stream: BinaryIO
     reference: ArtifactReference
     artifact_identifier: str
     writer: ArtifactWriter
@@ -321,8 +320,8 @@ class ExecutionContext[ConfigT, StateT]:
         )
 
     @property
-    def input_registrations(self) -> tuple[ArtifactRegistration, ...]:
-        return () if self._session is None else self._session.input_registrations
+    def input_definitions(self) -> tuple[ArtifactDefinition, ...]:
+        return () if self._session is None else self._session.input_definitions
 
     @property
     def writers(self) -> tuple[ArtifactWriter, ...]:
@@ -360,7 +359,11 @@ class ExecutionContext[ConfigT, StateT]:
         token = self._token
         try:
             if exc_type is None:
-                self._finalize_success()
+                try:
+                    self._finalize_success()
+                except Exception:
+                    self._cleanup_failure()
+                    raise
             else:
                 self._cleanup_failure()
         finally:
@@ -376,19 +379,13 @@ class ExecutionContext[ConfigT, StateT]:
 
     def create_artifact(
         self,
-        artifact: type[Artifact],
+        artifact: Artifact,
         path: str | PathLike[str],
         writer_type: type[ArtifactWriter],
     ) -> ArtifactWriter:
         from .artifact.writer import ArtifactWriter
 
-        catalog = discover_catalogs()
-        try:
-            registration = catalog.registration_for(artifact)
-        except KeyError:
-            artifact_identifier = artifact_class_identifier(artifact)
-        else:
-            artifact_identifier = registration.canonical_identifier
+        artifact_identifier = artifact.identifier
         reference = ArtifactReference(
             str(uuid4()),
             artifact_identifier,
@@ -411,13 +408,35 @@ class ExecutionContext[ConfigT, StateT]:
             body_digest=empty_digest,
             lineage=provisional_lineage,
         )
-        stream = io.BytesIO(bytes(_BODY_OFFSET))
+        destination = Path(path)
+        destination_key = destination.resolve()
+        if any(
+            output.path.resolve() == destination_key for output in self._pending_outputs
+        ):
+            raise ValueError("artifact output destination is already in use")
+        temporary_path = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+        stream = temporary_path.open("x+b")
+        stream.write(bytes(_BODY_OFFSET))
         region = BodyRegion(stream, _BODY_OFFSET, 0, self, writable=True)
-        writer = writer_type(region, metadata)
-        if not isinstance(writer, ArtifactWriter):
-            raise TypeError("writer type must construct an ArtifactWriter")
+        try:
+            writer = writer_type(region, metadata)
+            if not isinstance(writer, ArtifactWriter):
+                raise TypeError(  # noqa: TRY301
+                    "writer type must construct an ArtifactWriter"
+                )
+        except Exception:
+            stream.close()
+            temporary_path.unlink(missing_ok=True)
+            raise
         self._pending_outputs.append(
-            _PendingOutput(Path(path), stream, reference, artifact_identifier, writer)
+            _PendingOutput(
+                destination,
+                temporary_path,
+                stream,
+                reference,
+                artifact_identifier,
+                writer,
+            )
         )
         return writer
 
@@ -437,16 +456,21 @@ class ExecutionContext[ConfigT, StateT]:
             return
 
         records: list[ArtifactRecord] = []
-        bodies: dict[str, bytes] = {}
         for output in self._pending_outputs:
             length = output.writer._body.length
-            data = output.stream.getvalue()
-            body = data[_BODY_OFFSET : _BODY_OFFSET + length]
-            bodies[output.reference.identity] = body
+            digest = hashlib.sha256()
+            output.stream.seek(_BODY_OFFSET)
+            remaining = length
+            while remaining:
+                chunk = output.stream.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise ValueError("artifact body is truncated during finalization")
+                digest.update(chunk)
+                remaining -= len(chunk)
             records.append(
                 ArtifactRecord(
                     output.reference,
-                    hashlib.sha256(body).hexdigest(),
+                    digest.hexdigest(),
                     self.identity,
                 )
             )
@@ -463,18 +487,26 @@ class ExecutionContext[ConfigT, StateT]:
         )
         records_by_identity = {record.reference.identity: record for record in records}
         for output in self._pending_outputs:
-            body = bodies[output.reference.identity]
             record = records_by_identity[output.reference.identity]
+            body_length = output.writer._body.length
             header = ArtifactHeader(
                 artifact_identifier=output.artifact_identifier,
                 artifact_identity=output.reference.identity,
                 body_offset=_BODY_OFFSET,
-                body_length=len(body),
+                body_length=body_length,
                 body_digest=record.body_digest,
                 lineage=lineage,
             )
             encoded = encode_header(header)
-            output.path.write_bytes(encoded + bytes(_BODY_OFFSET - len(encoded)) + body)
+            if len(encoded) > _BODY_OFFSET:
+                raise ValueError("artifact lineage exceeds the available header region")
+            output.stream.seek(0)
+            output.stream.write(encoded)
+            output.stream.write(bytes(_BODY_OFFSET - len(encoded)))
+            output.stream.truncate(_BODY_OFFSET + body_length)
+            output.stream.flush()
+            output.stream.close()
+            output.temporary_path.replace(output.path)
             output.writer._replace_metadata(header)
             output.writer.finalize()
 
@@ -488,6 +520,15 @@ class ExecutionContext[ConfigT, StateT]:
                     resource._body.close()
                 except Exception:
                     pass
+        for output in self._pending_outputs:
+            try:
+                output.stream.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            try:
+                output.temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def current_execution() -> ExecutionContext[Any, Any] | None:

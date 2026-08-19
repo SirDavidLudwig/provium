@@ -36,11 +36,12 @@ class JsonArtifactWriter(ArtifactWriter):
         self.body.write(encoded)
 
 
-class JsonArtifact(Artifact[JsonArtifactReader, JsonArtifactWriter]):
-    """Artifact containing a dependency-free, generic JSON value."""
-
-    reader = JsonArtifactReader
-    writer = JsonArtifactWriter
+JsonArtifact = Artifact(
+    "provium.artifact.prefab.json.JsonArtifact",
+    "JSON",
+    reader=JsonArtifactReader,
+    writer=JsonArtifactWriter,
+)
 
 
 __all__ = ["JsonArtifact", "JsonArtifactReader", "JsonArtifactWriter"]

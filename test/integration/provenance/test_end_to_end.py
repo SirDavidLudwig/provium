@@ -9,6 +9,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactLineage,
     ArtifactReader,
     ArtifactReference,
@@ -28,9 +29,7 @@ class BytesWriter(ArtifactWriter):
         return self.body.write(value)
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,9 @@ class LabelCodec:
 @pytest.fixture(autouse=True)
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", BytesArtifact)
+    catalog.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: catalog)
     return catalog
 

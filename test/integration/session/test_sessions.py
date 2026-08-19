@@ -6,6 +6,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
     Procedure,
@@ -26,15 +27,15 @@ class BytesWriter(ArtifactWriter):
         self.body.write(value)
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @pytest.fixture(autouse=True)
 def discovered_catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     catalog = ArtifactCatalog()
-    catalog.register("example.BytesV1", BytesArtifact)
+    catalog.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
 
     def discover() -> ArtifactCatalog:
         return catalog

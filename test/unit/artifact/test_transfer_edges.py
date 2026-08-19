@@ -10,13 +10,12 @@ from provium import Artifact, ArtifactReader, ArtifactWriter
 from provium.artifact import transfer
 
 
-def test_base_transfer_hooks_report_unsupported(tmp_path: Path) -> None:
+def test_artifact_without_transfer_hooks_reports_unsupported(tmp_path: Path) -> None:
     assert not hasattr(ArtifactReader, "dump")
     assert not hasattr(ArtifactWriter, "load")
-    with pytest.raises(NotImplementedError, match="custom dump"):
-        Artifact.dump(object(), tmp_path)  # type: ignore[arg-type]
-    with pytest.raises(NotImplementedError, match="custom load"):
-        Artifact.load(tmp_path, object())  # type: ignore[arg-type]
+    artifact = Artifact("example.PlainV1", "Plain", ArtifactReader, ArtifactWriter)
+    assert artifact.dump is None
+    assert artifact.load is None
 
 
 @pytest.mark.parametrize("value", ["invalid", 1])
@@ -85,7 +84,7 @@ def test_public_argument_validation(tmp_path: Path) -> None:
         transfer.load_artifact(tmp_path, "output", mode="bad")  # type: ignore[arg-type]
 
 
-def test_container_validation_and_missing_registration(
+def test_container_validation_and_missing_definition(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     path = tmp_path / "artifact.pa"
@@ -124,38 +123,41 @@ def test_container_validation_and_missing_registration(
             raise KeyError(identifier)
 
     monkeypatch.setattr(transfer, "discover_catalogs", lambda: Catalog())
-    assert transfer._registration("missing") is None
+    assert transfer._definition("missing") is None
 
 
 def test_empty_custom_dump_is_rejected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    class Reader:
+    class Reader(ArtifactReader):
         def __init__(self, region, header) -> None:
             pass
 
         def close(self) -> None:
             pass
 
-    class EmptyArtifact(Artifact):
-        @staticmethod
-        def _resolve_reader():
-            return Reader
+    def empty_dump(reader, destination: Path) -> None:
+        pass
 
-        @classmethod
-        def dump(cls, reader, destination: Path) -> None:
-            pass
+    def empty_load(source: Path, writer) -> None:
+        pass
 
-        @classmethod
-        def load(cls, source: Path, writer) -> None:
-            pass
+    EmptyArtifact = Artifact(
+        "identifier",
+        "Empty",
+        Reader,
+        ArtifactWriter,
+        dump=empty_dump,
+        load=empty_load,
+    )  # type: ignore[arg-type]
 
-    class Registration:
-        artifact = EmptyArtifact
+    class Definition:
+        def resolve(self):
+            return EmptyArtifact
 
     header = type("Header", (), {"artifact_identifier": "identifier"})()
     monkeypatch.setattr(transfer, "_read_container", lambda path: (header, b"body"))
-    monkeypatch.setattr(transfer, "_registration", lambda identifier: Registration())
+    monkeypatch.setattr(transfer, "_definition", lambda identifier: Definition())
     with pytest.raises(ValueError, match="no files"):
         transfer.dump_artifact("source", tmp_path / "dump")
 
@@ -164,19 +166,17 @@ def test_custom_import_requires_definition_and_loader(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     manifest = {"artifact": {"identifier": "missing"}}
-    monkeypatch.setattr(transfer, "_registration", lambda identifier: None)
+    monkeypatch.setattr(transfer, "_definition", lambda identifier: None)
     with pytest.raises(ValueError, match="unavailable"):
         transfer._custom_body(manifest, tmp_path)
 
-    class ArtifactWithoutLoad(Artifact):
-        @staticmethod
-        def _resolve_writer() -> type[ArtifactWriter]:
-            return ArtifactWriter
+    ArtifactWithoutLoad = Artifact("missing", "No Load", ArtifactReader, ArtifactWriter)
 
-    class Registration:
-        artifact = ArtifactWithoutLoad
+    class Definition:
+        def resolve(self):
+            return ArtifactWithoutLoad
 
-    monkeypatch.setattr(transfer, "_registration", lambda identifier: Registration())
+    monkeypatch.setattr(transfer, "_definition", lambda identifier: Definition())
     with pytest.raises(ValueError, match="custom load"):
         transfer._custom_body(manifest, tmp_path)
 

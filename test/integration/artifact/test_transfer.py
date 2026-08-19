@@ -9,6 +9,7 @@ import pytest
 from provium import (
     Artifact,
     ArtifactCatalog,
+    ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
     Procedure,
@@ -30,17 +31,22 @@ class TextWriter(ArtifactWriter):
         self.body.write(value.encode())
 
 
-class TextArtifact(Artifact[TextReader, TextWriter]):
-    reader = TextReader
-    writer = TextWriter
+def dump_text(reader: TextReader, destination: Path) -> None:
+    (destination / "text.txt").write_text(reader.read())
 
-    @classmethod
-    def dump(cls, reader: TextReader, destination: Path) -> None:
-        (destination / "text.txt").write_text(reader.read())
 
-    @classmethod
-    def load(cls, source: Path, writer: TextWriter) -> None:
-        writer.write((source / "text.txt").read_text())
+def load_text(source: Path, writer: TextWriter) -> None:
+    writer.write((source / "text.txt").read_text())
+
+
+TextArtifact = Artifact(
+    "example.TextV1",
+    "Text",
+    reader=TextReader,
+    writer=TextWriter,
+    dump=dump_text,
+    load=load_text,
+)
 
 
 class BytesReader(ArtifactReader):
@@ -53,22 +59,24 @@ class BytesWriter(ArtifactWriter):
         self.body.write(value)
 
 
-class BytesArtifact(Artifact[BytesReader, BytesWriter]):
-    reader = BytesReader
-    writer = BytesWriter
+BytesArtifact = Artifact("example.BytesV1", "Bytes", BytesReader, BytesWriter)
 
 
 @pytest.fixture(autouse=True)
 def catalog(monkeypatch: pytest.MonkeyPatch) -> ArtifactCatalog:
     value = ArtifactCatalog()
-    value.register("example.TextV1", TextArtifact)
-    value.register("example.BytesV1", BytesArtifact)
+    value.register(
+        ArtifactDefinition("example.TextV1", f"{__name__}:TextArtifact", "Text.")
+    )
+    value.register(
+        ArtifactDefinition("example.BytesV1", f"{__name__}:BytesArtifact", "Bytes.")
+    )
     monkeypatch.setattr("provium.artifact.transfer.discover_catalogs", lambda: value)
     monkeypatch.setattr("provium.procedure.discover_catalogs", lambda: value)
     return value
 
 
-def create(path: Path, artifact: type[Artifact], value: object) -> None:
+def create(path: Path, artifact: Artifact, value: object) -> None:
     with Procedure("create", "1").execute():
         writer = artifact.create(path)
         writer.write(value)  # type: ignore[attr-defined]

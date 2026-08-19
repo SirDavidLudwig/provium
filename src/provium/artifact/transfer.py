@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,9 +21,9 @@ from ..provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
-from .definition import Artifact
 from .discovery import discover_catalogs
 from .header import ArtifactHeader, decode_header, encode_header
+from .reader import ArtifactReader
 from .region import BodyRegion
 
 Representation = Literal["auto", "custom", "raw"]
@@ -91,7 +92,7 @@ def _read_container(path: Path) -> tuple[ArtifactHeader, bytes]:
     return header, body
 
 
-def _registration(identifier: str) -> Any | None:
+def _definition(identifier: str) -> Any | None:
     try:
         return discover_catalogs().resolve(identifier)
     except KeyError:
@@ -135,26 +136,30 @@ def dump_artifact(
         raise ValueError(f"invalid representation: {representation}")
     source_path, destination_path = Path(source), Path(destination)
     header, body = _read_container(source_path)
-    registration = _registration(header.artifact_identifier)
-    artifact_type = None if registration is None else registration.artifact
-    reader_type = None if artifact_type is None else artifact_type._resolve_reader()
-    custom = (
-        artifact_type is not None
-        and artifact_type.dump.__func__ is not Artifact.dump.__func__
-        and artifact_type.load.__func__ is not Artifact.load.__func__
-    )
-    if representation == "custom" and not custom:
+    definition = _definition(header.artifact_identifier)
+    artifact = None if definition is None else definition.resolve()
+    custom_io: (
+        tuple[
+            type[ArtifactReader],
+            Callable[[ArtifactReader, Path], None],
+        ]
+        | None
+    ) = None
+    if artifact is not None and artifact.dump is not None and artifact.load is not None:
+        custom_io = (artifact.reader, artifact.dump)
+    if representation == "custom" and custom_io is None:
         raise ValueError("custom dump is not supported for this artifact")
-    selected = "custom" if representation != "raw" and custom else "raw"
+    selected = "custom" if representation != "raw" and custom_io is not None else "raw"
     _prepare_directory(destination_path, overwrite)
-    if selected == "custom":
+    if custom_io is not None and selected == "custom":
+        reader_type, dump = custom_io
         payload = destination_path / "payload"
         payload.mkdir()
         owner = _Owner()
         region = BodyRegion(io.BytesIO(body), 0, len(body), owner)
         reader = reader_type(region, header)
         with activate_context(owner):
-            artifact_type.dump(reader, payload)
+            dump(reader, payload)
             reader.close()
         files = _file_records(payload)
         if not files:
@@ -237,13 +242,14 @@ def inspect_dump(source: str | Path) -> DumpInfo:
 
 def _custom_body(manifest: dict[str, Any], source: Path) -> bytes:
     identifier = manifest["artifact"]["identifier"]
-    registration = _registration(identifier)
-    if registration is None:
+    definition = _definition(identifier)
+    if definition is None:
         raise ValueError(f"artifact definition is unavailable: {identifier}")
-    artifact_type = registration.artifact
-    if artifact_type.load.__func__ is Artifact.load.__func__:
+    artifact = definition.resolve()
+    load = artifact.load
+    if load is None:
         raise ValueError("custom load is not supported for this artifact")
-    writer_type = artifact_type._resolve_writer()
+    writer_type = artifact.writer
     owner = _Owner()
     stream = io.BytesIO()
     writer = writer_type(
@@ -251,7 +257,7 @@ def _custom_body(manifest: dict[str, Any], source: Path) -> bytes:
         _manifest_header(manifest),
     )
     with activate_context(owner):
-        artifact_type.load(source / "payload", writer)
+        load(source / "payload", writer)
         length = writer.body.length
         writer.close()
     return stream.getvalue()[:length]
