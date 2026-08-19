@@ -34,7 +34,9 @@ nav:
       - Procedures and provenance: guides/procedures.md
       - Dumping and loading: guides/transfers.md
       - Command-line tools: guides/cli.md
-  - API reference: reference/api.md
+  - API reference:
+      - Provium core: reference/provium.md
+      - Provium CLI: reference/provium-cli.md
 
 markdown_extensions:
   - admonition

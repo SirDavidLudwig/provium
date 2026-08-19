@@ -6,7 +6,7 @@ from importlib import metadata
 
 from .catalog import CommandCatalog
 
-ENTRY_POINT_GROUP = "provium.command_catalogs"
+ENTRY_POINT_GROUP = "provium_cli.command_catalogs"
 _discovered_catalog: CommandCatalog | None = None
 
 

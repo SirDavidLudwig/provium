@@ -5,7 +5,7 @@ import argparse
 import pytest
 
 from provium import __version__
-from provium.cli import Command, CommandCatalog, create_parser, main, run
+from provium_cli import Command, CommandCatalog, create_parser, main, run
 
 
 class ExampleCommand(Command):
@@ -74,7 +74,7 @@ def test_run_discovers_commands_when_catalog_is_not_supplied(
         calls += 1
         return catalog
 
-    monkeypatch.setattr("provium.cli.application.discover_command_catalogs", discover)
+    monkeypatch.setattr("provium_cli.application.discover_command_catalogs", discover)
 
     assert run(["example", "hello"]) == 5
     assert calls == 1
@@ -121,8 +121,8 @@ def test_main_uses_process_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
         received.append(arguments)
         return 9
 
-    monkeypatch.setattr("provium.cli.application.run", fake_run)
-    monkeypatch.setattr("provium.cli.application.sys.argv", ["provium", "example"])
+    monkeypatch.setattr("provium_cli.application.run", fake_run)
+    monkeypatch.setattr("provium_cli.application.sys.argv", ["provium", "example"])
 
     assert main() == 9
     assert received == [["example"]]

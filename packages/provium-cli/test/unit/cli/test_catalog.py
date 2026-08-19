@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from provium.cli import Command, CommandCatalog
+from provium_cli import Command, CommandCatalog
 
 
 class ExampleCommand(Command):

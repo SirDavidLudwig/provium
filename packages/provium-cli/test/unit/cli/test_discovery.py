@@ -6,13 +6,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from provium.cli import (
+from provium_cli import (
     Command,
     CommandCatalog,
     discover_command_catalogs,
     reset_command_discovery,
 )
-from provium.cli.discovery import ENTRY_POINT_GROUP
+from provium_cli.discovery import ENTRY_POINT_GROUP
 
 
 class FirstCommand(Command):
@@ -66,7 +66,7 @@ def test_discovers_and_combines_installed_catalogs(
             EntryPoint("second-plugin", lambda: catalog_with(SecondCommand)),
         )
 
-    monkeypatch.setattr("provium.cli.discovery.metadata.entry_points", entry_points)
+    monkeypatch.setattr("provium_cli.discovery.metadata.entry_points", entry_points)
 
     discovered = discover_command_catalogs()
 
@@ -81,7 +81,7 @@ def test_empty_discovery_returns_an_empty_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "provium.cli.discovery.metadata.entry_points",
+        "provium_cli.discovery.metadata.entry_points",
         lambda *, group: (),
     )
 
@@ -98,7 +98,7 @@ def test_successful_discovery_is_cached_until_reset(
         calls += 1
         return (EntryPoint("plugin", lambda: catalog_with(FirstCommand)),)
 
-    monkeypatch.setattr("provium.cli.discovery.metadata.entry_points", entry_points)
+    monkeypatch.setattr("provium_cli.discovery.metadata.entry_points", entry_points)
 
     first = discover_command_catalogs()
     second = discover_command_catalogs()
@@ -114,7 +114,7 @@ def test_rejects_entry_points_that_do_not_load_catalogs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "provium.cli.discovery.metadata.entry_points",
+        "provium_cli.discovery.metadata.entry_points",
         lambda *, group: (EntryPoint("broken", object),),
     )
 
@@ -129,7 +129,7 @@ def test_rejects_duplicate_commands_across_catalogs(
         pass
 
     monkeypatch.setattr(
-        "provium.cli.discovery.metadata.entry_points",
+        "provium_cli.discovery.metadata.entry_points",
         lambda *, group: (
             EntryPoint("first", lambda: catalog_with(FirstCommand)),
             EntryPoint("duplicate", lambda: catalog_with(DuplicateCommand)),
@@ -146,7 +146,7 @@ def test_failed_discovery_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None
         (EntryPoint("valid", lambda: catalog_with(FirstCommand)),),
     ]
     monkeypatch.setattr(
-        "provium.cli.discovery.metadata.entry_points",
+        "provium_cli.discovery.metadata.entry_points",
         lambda *, group: results.pop(0),
     )
 

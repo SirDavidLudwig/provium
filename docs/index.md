@@ -35,4 +35,5 @@ flowchart LR
 - No required runtime dependencies
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
-[API reference](reference/api.md){ .md-button }
+[Core API](reference/provium.md){ .md-button }
+[CLI API](reference/provium-cli.md){ .md-button }

@@ -3,44 +3,25 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "provium"
+name = "provium-cli"
 version = "0.5.0"
-description = "Typed artifacts with automatic provenance"
+description = "Command-line interface and command plugin system for Provium"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
 requires-python = ">=3.12"
-classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-]
-dependencies = []
+dependencies = ["provium>=0.5.0"]
 
 [project.scripts]
-provium = "provium.cli:main"
+provium = "provium_cli:main"
 
-[project.entry-points."provium.command_catalogs"]
-core = "provium.cli.commands:catalog"
-
-[project.urls]
-Homepage = "https://github.com/SirDavidLudwig/provium"
-Issues = "https://github.com/SirDavidLudwig/provium/issues"
-Repository = "https://github.com/SirDavidLudwig/provium"
+[project.entry-points."provium_cli.command_catalogs"]
+core = "provium_cli.commands:catalog"
 
 [project.optional-dependencies]
-visualization = [
-    "graphviz>=0.20",
-]
 test = [
-    "pydantic>=2.10",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.16",
-]
-docs = [
-    "mkdocs-material>=9.6",
-    "mkdocstrings[python]>=0.30",
 ]
 
 [tool.setuptools.packages.find]
@@ -50,7 +31,7 @@ where = ["src"]
 addopts = [
     "--strict-config",
     "--strict-markers",
-    "--cov=provium",
+    "--cov=provium_cli",
     "--cov-branch",
     "--cov-report=term-missing",
     "--cov-fail-under=100",
@@ -59,7 +40,7 @@ testpaths = ["test"]
 
 [tool.coverage.run]
 branch = true
-source = ["provium"]
+source = ["provium_cli"]
 
 [tool.coverage.report]
 fail_under = 100
@@ -72,3 +53,6 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "TRY", "UP"]
 ignore = ["TRY003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["provium", "provium_cli"]

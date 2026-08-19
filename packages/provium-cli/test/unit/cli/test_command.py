@@ -4,7 +4,7 @@ import argparse
 
 import pytest
 
-from provium.cli import Command
+from provium_cli import Command
 
 
 def test_command_is_abstract() -> None:

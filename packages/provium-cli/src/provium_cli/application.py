@@ -24,13 +24,9 @@ def create_parser(catalog: CommandCatalog) -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
     for command_type in catalog.commands.values():
-        # Instantiate the command class instance
         command = command_type()
-        # Add the command to the parser
         command_parser = subparsers.add_parser(command.name, help=command.help)
-        # Configure the command
         command.configure(command_parser)
-        # Store the command instance with the parser
         command_parser.set_defaults(**{_COMMAND_DESTINATION: command})
     return parser
 

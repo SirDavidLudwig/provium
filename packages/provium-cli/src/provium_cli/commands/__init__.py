@@ -1,4 +1,4 @@
-"""Commands provided by the Provium core package."""
+"""Commands provided by the Provium CLI distribution."""
 
 from ..catalog import CommandCatalog
 
