@@ -20,6 +20,9 @@ dependencies = []
 [project.scripts]
 provium = "provium.cli:main"
 
+[project.entry-points."provium.command_catalogs"]
+core = "provium.cli.commands:catalog"
+
 [project.urls]
 Homepage = "https://github.com/SirDavidLudwig/provium"
 Issues = "https://github.com/SirDavidLudwig/provium/issues"

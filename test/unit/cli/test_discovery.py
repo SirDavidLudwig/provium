@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 
 import pytest
@@ -41,7 +41,9 @@ class EntryPoint:
 
 
 @pytest.fixture(autouse=True)
-def reset_discovery() -> None:
+def reset_discovery() -> Generator[None]:
+    reset_command_discovery()
+    yield
     reset_command_discovery()
 
 
