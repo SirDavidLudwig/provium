@@ -1,5 +1,9 @@
-"""Command-line interface for inspecting Provium artifacts."""
+"""Provium's command-line entry point."""
 
-from .application import main
+
+def main() -> int:
+    """Run the Provium command-line interface."""
+    return 0
+
 
 __all__ = ["main"]

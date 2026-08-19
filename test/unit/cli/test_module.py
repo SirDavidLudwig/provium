@@ -5,8 +5,12 @@ import runpy
 import pytest
 
 
-def test_module_exits_with_main_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_module_exits_with_cli_main_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("provium.cli.main", lambda: 12)
 
-    with pytest.raises(SystemExit, match="12"):
-        runpy.run_module("provium.cli", run_name="__main__")
+    with pytest.raises(SystemExit) as exit_info:
+        runpy.run_module("provium.__main__", run_name="__main__")
+
+    assert exit_info.value.code == 12
