@@ -1,41 +1,45 @@
 # Provium Text Pipeline Example
 
-This example package demonstrates a full catalog-driven setup:
+This installable example demonstrates a catalog-discovered artifact pipeline:
 
-- three custom artifact types (`RawTextV1`, `TokenListV1`, `WordStatsV1`)
-- two procedures
-  - `TokenizeTextV1`: normalize and tokenize raw text into a token list
-  - `AggregateWordCountsV1`: combine one or more token lists into frequency stats
-- one artifact catalog and one procedure catalog registered through `pyproject.toml`
+- `DocumentV1` stores a UTF-8 document and loads or dumps `.txt` files.
+- `TokensV1` stores a JSON list of tokens and dumps it as newline-delimited text.
+- `TokenizeV1` reads a document and produces its whitespace-delimited tokens.
 
-## Install as a local package
+## Install
 
-```bash
-pip install -e .
-```
-
-## Run from Python
-
-```python
-from provium import ProcedureExecutor
-from provium_text_pipeline.artifacts import RAW_TEXT_DEFINITION, TOKEN_LIST_DEFINITION
-from provium_text_pipeline.procedures import TOKENIZE_DEFINITION
-
-result = ProcedureExecutor().execute(
-    TOKENIZE_DEFINITION,
-    configuration_layers=({"lowercase": True, "min_token_length": 3},),
-    inputs={"text": RAW_TEXT_DEFINITION.resolve().bind_read("input.pa")},
-    outputs={"tokens": TOKEN_LIST_DEFINITION.resolve().bind_write("tokens.pa")},
-)
-```
-
-The input path must contain a `RawTextV1` Provium artifact. After creating one,
-the same procedure can be discovered and executed through the installed CLI:
+From the repository root:
 
 ```bash
-provium procedure show example.TokenizeTextV1 --resolve
-provium execute example.TokenizeTextV1 \
-  --config tokenize.json \
-  --input text=input.pa \
-  --output tokens=tokens.pa
+python -m pip install -e "./packages/provium"
+python -m pip install -e "./examples/provium-text-pipeline[test]"
 ```
+
+## Run the pipeline
+
+```bash
+provium artifact load \
+  provium_text_pipeline_example.DocumentV1 \
+  document.txt \
+  document.pa
+
+provium execute \
+  provium_text_pipeline_example.TokenizeV1 \
+  --input source=document.pa \
+  --output destination=tokens.pa
+
+provium artifact dump tokens.pa tokens.txt
+```
+
+The loaded document starts a new lineage through Provium's internal load
+procedure. The token artifact records the document as its input and
+`TokenizeV1` as its producing procedure.
+
+## Test
+
+```bash
+pytest
+```
+
+The tests exercise catalog discovery laziness and the complete CLI workflow,
+including artifact transfer, procedure execution, output contents, and lineage.

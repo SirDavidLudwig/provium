@@ -54,17 +54,34 @@ def test_installed_wheels_complete_external_plugin_workflow(
     run(sys.executable, "-m", "venv", "--system-site-packages", str(environment))
     python = environment / "bin" / "python"
     wheels = tuple(str(path) for path in sorted(distributions.glob("*.whl")))
-    run(str(python), "-m", "pip", "install", "--no-deps", *wheels)
+    run(
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "--force-reinstall",
+        "--no-deps",
+        *wheels,
+    )
 
     imported_paths = run(
         str(python),
         "-c",
         (
+            "import sys; "
             "import provium, provium.cli, provium_example_plugin, "
-            "provium_text_pipeline; "
+            "provium_text_pipeline_example; "
+            "assert 'provium_text_pipeline_example.artifact.document' "
+            "not in sys.modules; "
+            "assert 'provium_text_pipeline_example.artifact.tokens' "
+            "not in sys.modules; "
+            "assert 'provium_text_pipeline_example.procedure.tokenize.contract' "
+            "not in sys.modules; "
+            "assert 'provium_text_pipeline_example.procedure.tokenize.implementation' "
+            "not in sys.modules; "
             "print(provium.__file__); print(provium.cli.__file__); "
             "print(provium_example_plugin.__file__); "
-            "print(provium_text_pipeline.__file__)"
+            "print(provium_text_pipeline_example.__file__)"
         ),
         cwd=tmp_path,
     ).stdout.splitlines()
@@ -77,8 +94,26 @@ def test_installed_wheels_complete_external_plugin_workflow(
     assert "smoke.SourceTextV1\tSource text" in listed.stdout
     assert "smoke.TransformTextV1\tTransform text" in listed.stdout
     assert "smoke.FailingTextV1\tFailing text" in listed.stdout
-    assert "example.TokenizeTextV1\tTokenize text" in listed.stdout
-    assert "example.AggregateWordCountsV1\tAggregate word counts" in listed.stdout
+    assert "provium_text_pipeline_example.TokenizeV1\tTokenize" in listed.stdout
+
+    lazy_example = run(
+        str(python),
+        "-c",
+        (
+            "import sys; "
+            "from provium import discover_artifact_catalogs, "
+            "discover_procedure_catalogs; "
+            "discover_artifact_catalogs(); discover_procedure_catalogs(); "
+            "forbidden = {'provium_text_pipeline_example.artifact.document', "
+            "'provium_text_pipeline_example.artifact.tokens', "
+            "'provium_text_pipeline_example.procedure.tokenize.contract', "
+            "'provium_text_pipeline_example.procedure.tokenize.implementation'}; "
+            "assert forbidden.isdisjoint(sys.modules), "
+            "sorted(forbidden.intersection(sys.modules))"
+        ),
+        cwd=tmp_path,
+    )
+    assert lazy_example.stdout == ""
 
     sentinel = tmp_path / "imports.log"
     sentinel_environment = {"PROVIUM_TEST_IMPORT_SENTINEL": str(sentinel)}
@@ -249,75 +284,70 @@ assert {{reference.identity for reference in execution.outputs}} == {{
     assert existing.read_bytes() == b"original"
     assert set(tmp_path.iterdir()) == paths_before_failure
 
+    source_text = tmp_path / "example-input.txt"
+    source_text.write_text("Hello hello world and Provium", encoding="utf-8")
     raw_text = tmp_path / "example-input.provium"
-    create_example_input = f"""
-from provium import ImperativeProcedure
-from provium_text_pipeline.artifacts import RawTextArtifact
-
-output = RawTextArtifact.bind_write({str(raw_text)!r})
-with ImperativeProcedure("example.SeedRawTextV1", "acceptance-test").execute(
-    outputs={{"text": output}}
-):
-    with output.open() as writer:
-        writer.write("Hello hello world and Provium")
-"""
-    run(str(python), "-c", create_example_input, cwd=tmp_path)
-    tokenize_configuration = tmp_path / "tokenize.json"
-    tokenize_configuration.write_text(
-        json.dumps({"lowercase": True, "min_token_length": 4}),
-        encoding="utf-8",
+    loaded = run(
+        str(python),
+        "-m",
+        "provium",
+        "artifact",
+        "load",
+        "provium_text_pipeline_example.DocumentV1",
+        str(source_text),
+        str(raw_text),
+        cwd=tmp_path,
     )
+    assert loaded.stdout == loaded.stderr == ""
     tokens = tmp_path / "example-tokens.provium"
     tokenize_execution = run(
         str(python),
         "-m",
         "provium",
         "execute",
-        "example.TokenizeTextV1",
-        "--config",
-        str(tokenize_configuration),
+        "provium_text_pipeline_example.TokenizeV1",
         "--input",
-        f"text={raw_text}",
+        f"source={raw_text}",
         "--output",
-        f"tokens={tokens}",
+        f"destination={tokens}",
         cwd=tmp_path,
     ).stdout.strip()
     assert str(UUID(tokenize_execution)) == tokenize_execution
 
-    aggregate_configuration = tmp_path / "aggregate.yaml"
-    aggregate_configuration.write_text("top_n: 2\n", encoding="utf-8")
-    counts = tmp_path / "example-counts.provium"
-    aggregate_execution = run(
+    dumped_tokens = tmp_path / "example-tokens.txt"
+    dumped = run(
         str(python),
         "-m",
         "provium",
-        "execute",
-        "example.AggregateWordCountsV1",
-        "--config",
-        str(aggregate_configuration),
-        "--input",
-        f"token_lists={tokens}",
-        "--output",
-        f"counts={counts}",
+        "artifact",
+        "dump",
+        str(tokens),
+        str(dumped_tokens),
         cwd=tmp_path,
-    ).stdout.strip()
-    assert str(UUID(aggregate_execution)) == aggregate_execution
+    )
+    assert dumped.stdout == dumped.stderr == ""
+    assert dumped_tokens.read_text(encoding="utf-8").splitlines() == [
+        "Hello",
+        "hello",
+        "world",
+        "and",
+        "Provium",
+    ]
 
     inspect_example_output = f"""
 from provium import session
-from provium_text_pipeline.artifacts import TokenListArtifact, WordStatsArtifact
+from provium_text_pipeline_example.artifact.tokens import TokensV1Artifact
 
 with session():
-    with WordStatsArtifact.bind_read({str(counts)!r}).open() as reader:
-        assert reader.read() == {{"hello": 2, "provium": 1}}
+    with TokensV1Artifact.bind_read({str(tokens)!r}).open() as reader:
+        assert reader.read() == ["Hello", "hello", "world", "and", "Provium"]
         metadata = reader.metadata
-with session():
-    with TokenListArtifact.bind_read({str(tokens)!r}).open() as reader:
-        token_identity = reader.identity
-assert metadata.artifact_identifier == "example.WordStatsV1"
-execution = metadata.lineage.executions[{aggregate_execution!r}]
-assert execution.procedure.name == "example.AggregateWordCountsV1"
+assert metadata.artifact_identifier == "provium_text_pipeline_example.TokensV1"
+execution = metadata.lineage.executions[{tokenize_execution!r}]
+assert execution.procedure.name == "provium_text_pipeline_example.TokenizeV1"
 assert len(execution.inputs) == 1
-assert execution.inputs[0].identity == token_identity
+assert execution.inputs[0].artifact_identifier == (
+    "provium_text_pipeline_example.DocumentV1"
+)
 """
     run(str(python), "-c", inspect_example_output, cwd=tmp_path)

@@ -10,14 +10,17 @@ dependencies = ["provium>=0.5.0"]
 description = "A full-fledged Provium example plugin for text tokenization and aggregation workflows."
 readme = "README.md"
 
-[project.entry-points."provium.catalogs"]
-example = "provium_text_pipeline.artifacts.catalog:artifact_catalog"
+[project.optional-dependencies]
+test = ["pytest>=8.3"]
 
 [project.entry-points."provium.artifact_catalogs"]
-example = "provium_text_pipeline.artifacts.catalog:artifact_catalog"
+example = "provium_text_pipeline_example.artifact:catalog"
 
 [project.entry-points."provium.procedure_catalogs"]
-example = "provium_text_pipeline.procedures.catalog:procedure_catalog"
+example = "provium_text_pipeline_example.procedure:catalog"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]

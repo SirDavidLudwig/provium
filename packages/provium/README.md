@@ -1,8 +1,8 @@
 # Provium
 
 [![PyPI](https://img.shields.io/pypi/v/provium.svg)](https://pypi.org/project/provium/)
-[![Tests](https://github.com/Project-Provium/provium/actions/workflows/test.yml/badge.svg)](https://github.com/Project-Provium/provium/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/Project-Provium/provium/graph/badge.svg)](https://codecov.io/gh/Project-Provium/provium)
+[![Python](https://img.shields.io/pypi/pyversions/provium.svg)](https://pypi.org/project/provium/)
+[![License](https://img.shields.io/pypi/l/provium.svg)](https://pypi.org/project/provium/)
 
 [Documentation](https://provium.dlii.tech) ·
 [PyPI](https://pypi.org/project/provium/) ·

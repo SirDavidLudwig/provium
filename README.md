@@ -1,5 +1,9 @@
 # Provium
 
+[![Tests](https://github.com/Project-Provium/provium/actions/workflows/test.yml/badge.svg)](https://github.com/Project-Provium/provium/actions/workflows/test.yml)
+[![Documentation](https://github.com/Project-Provium/provium/actions/workflows/docs.yml/badge.svg)](https://github.com/Project-Provium/provium/actions/workflows/docs.yml)
+[![codecov](https://codecov.io/gh/Project-Provium/provium/graph/badge.svg)](https://codecov.io/gh/Project-Provium/provium)
+
 This repository is a Python monorepo containing the Provium package and its
 example projects:
 

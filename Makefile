@@ -4,15 +4,19 @@ PYTHON ?= $(CURDIR)/.venv/bin/python
 
 install:
 	$(PYTHON) -m pip install -e "./packages/provium[test,docs]"
+	$(PYTHON) -m pip install -e "./examples/provium-text-pipeline[test]"
 
 test:
 	cd packages/provium && $(PYTHON) -m pytest
+	cd examples/provium-text-pipeline && $(PYTHON) -m pytest
 
 lint:
 	cd packages/provium && $(PYTHON) -m ruff check src test typecheck
+	cd examples/provium-text-pipeline && $(PYTHON) -m ruff check src test
 
 format-check:
 	cd packages/provium && $(PYTHON) -m ruff format --check src test typecheck
+	cd examples/provium-text-pipeline && $(PYTHON) -m ruff format --check src test
 
 type-check:
 	cd packages/provium && $(PYTHON) -m pyright
