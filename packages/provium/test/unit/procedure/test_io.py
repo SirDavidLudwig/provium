@@ -1,11 +1,15 @@
 """Tests for declarative procedure I/O fields."""
 
+from pathlib import Path
+
 import pytest
 
 from provium import (
     Artifact,
     ArtifactDefinition,
+    ArtifactReadBinding,
     ArtifactReader,
+    ArtifactWriteBinding,
     ArtifactWriter,
     ProcedureInputField,
     ProcedureInputs,
@@ -114,9 +118,9 @@ def test_optional_instance_access_is_not_constructed_yet() -> None:
         value = optional_output(EXAMPLE_ARTIFACT)
 
     with pytest.raises(AttributeError, match="input values are not constructed yet"):
-        Inputs().value
+        Inputs.value.__get__(object(), Inputs)
     with pytest.raises(AttributeError, match="output values are not constructed yet"):
-        Outputs().value
+        Outputs.value.__get__(object(), Outputs)
 
 
 def test_repeated_input_exposes_unbounded_metadata_by_default() -> None:
@@ -152,7 +156,7 @@ def test_repeated_input_instance_access_is_not_constructed_yet() -> None:
         values = repeated_input(EXAMPLE_ARTIFACT)
 
     with pytest.raises(AttributeError, match="input values are not constructed yet"):
-        Inputs().values
+        Inputs.values.__get__(object(), Inputs)
 
 
 def test_outputs_reject_repeated_input_fields() -> None:
@@ -239,7 +243,7 @@ def test_instance_input_access_is_not_constructed_yet() -> None:
         value = input(EXAMPLE_ARTIFACT)
 
     with pytest.raises(AttributeError, match="input values are not constructed yet"):
-        Inputs().value
+        Inputs.value.__get__(object(), Inputs)
 
 
 def test_instance_output_access_is_not_constructed_yet() -> None:
@@ -247,7 +251,7 @@ def test_instance_output_access_is_not_constructed_yet() -> None:
         value = output(EXAMPLE_ARTIFACT)
 
     with pytest.raises(AttributeError, match="output values are not constructed yet"):
-        Outputs().value
+        Outputs.value.__get__(object(), Outputs)
 
 
 def test_public_attributes_must_be_io_fields() -> None:
@@ -340,10 +344,29 @@ def test_mixed_direction_inheritance_is_rejected() -> None:
     class Outputs(ProcedureOutputs):
         value = output(EXAMPLE_ARTIFACT)
 
-    with pytest.raises(TypeError, match="Inputs.value must be an input field"):
+    with pytest.raises(TypeError, match="conflicting record directions"):
 
         class Inputs(ProcedureInputs, Outputs):
             pass
+
+
+def test_empty_mixed_direction_inheritance_is_rejected() -> None:
+    with pytest.raises(TypeError, match="conflicting record directions"):
+
+        class Record(ProcedureInputs, ProcedureOutputs):
+            pass
+
+
+def test_unrelated_mixin_direction_does_not_conflict() -> None:
+    class Mixin:
+        _direction = "output"
+        fields = {"foreign": object()}
+
+    class Inputs(ProcedureInputs, Mixin):
+        value = input(EXAMPLE_ARTIFACT)
+
+    assert Inputs.value.direction == "input"
+    assert list(Inputs.fields) == ["value"]
 
 
 def test_record_direction_cannot_be_overridden() -> None:
@@ -481,3 +504,171 @@ def test_explicit_override_resolves_inherited_field_conflict() -> None:
         value = input(EXAMPLE_ARTIFACT)
 
     assert Inputs.fields["value"] is Inputs.value
+
+
+def test_records_are_constructed_in_field_order_from_bindings() -> None:
+    class Inputs(ProcedureInputs):
+        first = input(EXAMPLE_ARTIFACT)
+        second = input(EXAMPLE_ARTIFACT)
+
+    first = ArtifactReadBinding(ExampleArtifact, "first.data")
+    second = ArtifactReadBinding(ExampleArtifact, "second.data")
+
+    values = Inputs._from_bindings({"second": second, "first": first})
+
+    assert values.first is first
+    assert values.second is second
+    assert repr(values) == f"Inputs(first={first!r}, second={second!r})"
+
+
+def test_optional_and_repeated_fields_receive_immutable_defaults() -> None:
+    class Inputs(ProcedureInputs):
+        previous = optional_input(EXAMPLE_ARTIFACT)
+        values = repeated_input(EXAMPLE_ARTIFACT)
+
+    values = Inputs._from_bindings({})
+
+    assert values.previous is None
+    assert values.values == ()
+    with pytest.raises(AttributeError, match="immutable"):
+        values.previous = None  # type: ignore[misc]
+    with pytest.raises(AttributeError, match="immutable"):
+        del values.values
+
+
+def test_record_subclasses_do_not_regain_instance_dictionaries() -> None:
+    class Inputs(ProcedureInputs):
+        value = optional_input(EXAMPLE_ARTIFACT)
+
+    values = Inputs._from_bindings({})
+
+    assert not hasattr(values, "__dict__")
+
+
+def test_record_subclasses_cannot_explicitly_add_an_instance_dictionary() -> None:
+    with pytest.raises(TypeError, match="cannot declare an instance dictionary"):
+
+        class Inputs(ProcedureInputs):
+            __slots__ = ("__dict__",)
+
+
+@pytest.mark.parametrize("method_name", ["__setattr__", "__delattr__"])
+def test_record_subclasses_cannot_override_immutability(method_name: str) -> None:
+    with pytest.raises(TypeError, match="cannot override record immutability"):
+        type(
+            "Inputs",
+            (ProcedureInputs,),
+            {method_name: lambda *args: None},
+        )
+
+
+def test_repeated_inputs_are_normalized_to_an_ordered_tuple() -> None:
+    class Inputs(ProcedureInputs):
+        values = repeated_input(EXAMPLE_ARTIFACT, minimum=1, maximum=2)
+
+    first = ArtifactReadBinding(ExampleArtifact, "first.data")
+    second = ArtifactReadBinding(ExampleArtifact, "second.data")
+
+    values = Inputs._from_bindings({"values": [first, second]})
+
+    assert values.values == (first, second)
+
+
+def test_output_records_expose_write_bindings() -> None:
+    class Outputs(ProcedureOutputs):
+        result = output(EXAMPLE_ARTIFACT)
+        preview = optional_output(EXAMPLE_ARTIFACT)
+
+    result = ArtifactWriteBinding(ExampleArtifact, "result.data")
+
+    values = Outputs._from_bindings({"result": result})
+
+    assert values.result is result
+    assert values.preview is None
+
+
+def test_record_construction_rejects_unknown_and_missing_fields() -> None:
+    class Inputs(ProcedureInputs):
+        value = input(EXAMPLE_ARTIFACT)
+
+    with pytest.raises(TypeError, match="unknown field: other"):
+        Inputs._from_bindings({"other": object()})
+    with pytest.raises(TypeError, match="missing required field: value"):
+        Inputs._from_bindings({})
+    with pytest.raises(TypeError, match="bindings must be a mapping"):
+        Inputs._from_bindings([])  # type: ignore[arg-type]
+
+
+def test_records_cannot_be_constructed_without_validated_bindings() -> None:
+    class Inputs(ProcedureInputs):
+        value = optional_input(EXAMPLE_ARTIFACT)
+
+    with pytest.raises(TypeError, match="must be constructed from bindings"):
+        Inputs()
+
+
+@pytest.mark.parametrize("method_name", ["__init__", "_from_bindings"])
+def test_record_subclasses_cannot_override_binding_construction(
+    method_name: str,
+) -> None:
+    with pytest.raises(TypeError, match="cannot override binding construction"):
+        type("Inputs", (ProcedureInputs,), {method_name: lambda *args: None})
+
+
+@pytest.mark.parametrize(
+    ("record_type", "binding", "message"),
+    [
+        (
+            type("Inputs", (ProcedureInputs,), {"value": input(EXAMPLE_ARTIFACT)}),
+            ArtifactWriteBinding(ExampleArtifact, "value.data"),
+            "must be an artifact read binding",
+        ),
+        (
+            type("Outputs", (ProcedureOutputs,), {"value": output(EXAMPLE_ARTIFACT)}),
+            ArtifactReadBinding(ExampleArtifact, "value.data"),
+            "must be an artifact write binding",
+        ),
+    ],
+)
+def test_record_construction_rejects_the_wrong_binding_direction(
+    record_type: type[ProcedureInputs] | type[ProcedureOutputs],
+    binding: object,
+    message: str,
+) -> None:
+    with pytest.raises(TypeError, match=message):
+        record_type._from_bindings({"value": binding})
+
+
+def test_record_construction_rejects_a_different_artifact() -> None:
+    class OtherArtifact(Artifact[Reader, Writer]):
+        definition = OTHER_ARTIFACT
+        reader = Reader
+        writer = Writer
+
+    class Inputs(ProcedureInputs):
+        value = input(EXAMPLE_ARTIFACT)
+
+    binding = ArtifactReadBinding(OtherArtifact, Path("value.data"))
+
+    with pytest.raises(TypeError, match="value must bind artifact example.ExampleV1"):
+        Inputs._from_bindings({"value": binding})
+
+
+@pytest.mark.parametrize(
+    ("supplied", "message"),
+    [
+        (object(), "must be a sequence of artifact read bindings"),
+        ([], "requires at least 1 binding"),
+        ([None, None, None], "permits at most 2 bindings"),
+        ([None], "must be an artifact read binding"),
+    ],
+)
+def test_repeated_input_construction_validates_shape_and_cardinality(
+    supplied: object,
+    message: str,
+) -> None:
+    class Inputs(ProcedureInputs):
+        values = repeated_input(EXAMPLE_ARTIFACT, minimum=1, maximum=2)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        Inputs._from_bindings({"values": supplied})

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
-from typing import Any, ClassVar, Literal, overload
+from typing import Any, ClassVar, Literal, Self, cast, overload
 
 from provium.artifact import (
     Artifact,
@@ -74,6 +74,18 @@ class ProcedureIOField:
     def is_declared_on(self, owner: type[object]) -> bool:
         """Return whether this descriptor was first assigned to ``owner``."""
         return self._owner is owner
+
+    def _get_value(self, instance: object) -> object:
+        try:
+            values = cast(
+                Mapping[str, object],
+                object.__getattribute__(instance, "_values"),
+            )
+            return values[self.name]
+        except AttributeError:
+            raise AttributeError(
+                f"procedure {self.direction} values are not constructed yet"
+            ) from None
 
     @property
     def artifact(self) -> ArtifactDefinition[Any]:
@@ -146,7 +158,7 @@ class ProcedureInputField[ReaderT: ArtifactReader](ProcedureIOField):
     ) -> Any:
         if instance is None:
             return self
-        raise AttributeError("procedure input values are not constructed yet")
+        return self._get_value(instance)
 
 
 class ProcedureOutputField[WriterT: ArtifactWriter](ProcedureIOField):
@@ -177,7 +189,7 @@ class ProcedureOutputField[WriterT: ArtifactWriter](ProcedureIOField):
     ) -> Any:
         if instance is None:
             return self
-        raise AttributeError("procedure output values are not constructed yet")
+        return self._get_value(instance)
 
 
 class ProcedureOptionalInputField[ReaderT: ArtifactReader](ProcedureIOField):
@@ -208,7 +220,7 @@ class ProcedureOptionalInputField[ReaderT: ArtifactReader](ProcedureIOField):
     ) -> Any:
         if instance is None:
             return self
-        raise AttributeError("procedure input values are not constructed yet")
+        return self._get_value(instance)
 
 
 class ProcedureOptionalOutputField[WriterT: ArtifactWriter](ProcedureIOField):
@@ -239,7 +251,7 @@ class ProcedureOptionalOutputField[WriterT: ArtifactWriter](ProcedureIOField):
     ) -> Any:
         if instance is None:
             return self
-        raise AttributeError("procedure output values are not constructed yet")
+        return self._get_value(instance)
 
 
 class ProcedureRepeatedInputField[ReaderT: ArtifactReader](ProcedureIOField):
@@ -283,15 +295,170 @@ class ProcedureRepeatedInputField[ReaderT: ArtifactReader](ProcedureIOField):
     ) -> Any:
         if instance is None:
             return self
-        raise AttributeError("procedure input values are not constructed yet")
+        return self._get_value(instance)
 
 
-class _ProcedureIORecord:
+class _ProcedureIORecordMeta(type):
+    """Keep every procedure I/O record subclass slot-based."""
+
+    @staticmethod
+    def _record_slots(namespace: Mapping[str, object]) -> tuple[str, ...]:
+        declared = namespace.get("__slots__", ())
+        slots = (
+            (declared,)
+            if isinstance(declared, str)
+            else tuple(cast(Iterable[str], declared))
+        )
+        if "__dict__" in slots:
+            raise TypeError(
+                "procedure I/O record cannot declare an instance dictionary"
+            )
+        return slots
+
+    def __new__(
+        mcls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> _ProcedureIORecordMeta:
+        namespace["__slots__"] = mcls._record_slots(namespace)
+        return super().__new__(mcls, name, bases, namespace, **kwargs)
+
+
+class _ProcedureIORecord(metaclass=_ProcedureIORecordMeta):
+    __slots__ = ("_values",)
+
     _direction: ClassVar[Literal["input", "output"]]
     fields: ClassVar[Mapping[str, ProcedureIOField]] = MappingProxyType({})
+    _construction_methods: ClassVar[frozenset[str]] = frozenset(
+        {
+            "__init__",
+            "_from_bindings",
+            "_normalize_field_value",
+            "_normalize_repeated_value",
+            "_validate_binding",
+            "_validate_binding_artifact",
+            "_validate_binding_names",
+            "_validate_cardinality",
+        }
+    )
+
+    def __init__(self) -> None:
+        raise TypeError("procedure I/O records must be constructed from bindings")
+
+    @classmethod
+    def _from_bindings(cls, bindings: Mapping[str, object]) -> Self:
+        """Construct a record from executor-supplied bindings."""
+        cls._validate_binding_names(bindings)
+        values = {
+            name: cls._normalize_field_value(field, bindings.get(name))
+            for name, field in cls.fields.items()
+        }
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "_values", MappingProxyType(values))
+        return instance
+
+    @classmethod
+    def _validate_binding_names(cls, bindings: Mapping[str, object]) -> None:
+        if not isinstance(bindings, Mapping):
+            raise TypeError("procedure I/O bindings must be a mapping")
+        unknown = [name for name in bindings if name not in cls.fields]
+        if unknown:
+            raise TypeError(f"unknown field: {unknown[0]}")
+
+    @classmethod
+    def _normalize_field_value(
+        cls,
+        field: ProcedureIOField,
+        supplied: object,
+    ) -> object:
+        if field.repeated:
+            return cls._normalize_repeated_value(field, supplied)
+        if supplied is None:
+            if field.required:
+                raise TypeError(f"missing required field: {field.name}")
+            return None
+        cls._validate_binding(field, supplied)
+        return supplied
+
+    @classmethod
+    def _normalize_repeated_value(
+        cls,
+        field: ProcedureIOField,
+        supplied: object,
+    ) -> tuple[object, ...]:
+        if supplied is None:
+            values: tuple[object, ...] = ()
+        elif isinstance(supplied, Sequence) and not isinstance(
+            supplied, (str, bytes, bytearray)
+        ):
+            values = tuple(cast(Sequence[object], supplied))
+        else:
+            raise TypeError(
+                f"{field.name} must be a sequence of artifact read bindings"
+            )
+        cls._validate_cardinality(field, len(values))
+        for value in values:
+            cls._validate_binding(field, value)
+        return values
+
+    @staticmethod
+    def _validate_cardinality(field: ProcedureIOField, count: int) -> None:
+        if count < field.minimum:
+            raise ValueError(
+                f"{field.name} requires at least {field.minimum} binding"
+                f"{'s' if field.minimum != 1 else ''}"
+            )
+        if field.maximum is not None and count > field.maximum:
+            raise ValueError(
+                f"{field.name} permits at most {field.maximum} binding"
+                f"{'s' if field.maximum != 1 else ''}"
+            )
+
+    @classmethod
+    def _validate_binding(cls, field: ProcedureIOField, binding: object) -> None:
+        expected_type: type[object]
+        if cls._direction == "input":
+            expected_type = ArtifactReadBinding
+            direction = "read"
+        else:
+            expected_type = ArtifactWriteBinding
+            direction = "write"
+        if not isinstance(binding, expected_type):
+            raise TypeError(f"{field.name} must be an artifact {direction} binding")
+        cls._validate_binding_artifact(
+            field,
+            cast(ArtifactReadBinding[Any] | ArtifactWriteBinding[Any], binding),
+        )
+
+    @staticmethod
+    def _validate_binding_artifact(
+        field: ProcedureIOField,
+        binding: ArtifactReadBinding[Any] | ArtifactWriteBinding[Any],
+    ) -> None:
+        expected = (field.artifact.identifier, field.artifact.target)
+        actual_definition = binding.artifact.definition
+        actual = (actual_definition.identifier, actual_definition.target)
+        if actual != expected:
+            raise TypeError(
+                f"{field.name} must bind artifact {field.artifact.identifier}"
+            )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("procedure I/O records are immutable")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("procedure I/O records are immutable")
+
+    def __repr__(self) -> str:
+        values = ", ".join(f"{name}={self._values[name]!r}" for name in self.fields)
+        return f"{type(self).__name__}({values})"
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        cls._validate_construction_declaration()
+        cls._validate_immutability_declaration()
         cls._validate_direction_declaration()
         fields, inherited_candidates, conflicts = cls._collect_inherited_fields()
         cls._merge_declared_fields(fields, inherited_candidates, conflicts)
@@ -300,9 +467,27 @@ class _ProcedureIORecord:
         cls.fields = MappingProxyType(fields)
 
     @classmethod
+    def _validate_construction_declaration(cls) -> None:
+        if _ProcedureIORecord._construction_methods & cls.__dict__.keys():
+            raise TypeError("procedure I/O record cannot override binding construction")
+
+    @classmethod
+    def _validate_immutability_declaration(cls) -> None:
+        if "__setattr__" in cls.__dict__ or "__delattr__" in cls.__dict__:
+            raise TypeError("procedure I/O record cannot override record immutability")
+
+    @classmethod
     def _validate_direction_declaration(cls) -> None:
         if "_direction" in cls.__dict__ and _ProcedureIORecord not in cls.__bases__:
             raise TypeError("procedure I/O record direction cannot be overridden")
+        inherited_directions = {
+            direction
+            for base in cls.__bases__
+            if issubclass(base, _ProcedureIORecord)
+            and (direction := getattr(base, "_direction", None)) is not None
+        }
+        if len(inherited_directions) > 1:
+            raise TypeError("procedure I/O record has conflicting record directions")
 
     @classmethod
     def _collect_inherited_fields(
@@ -315,6 +500,8 @@ class _ProcedureIORecord:
         fields: dict[str, ProcedureIOField] = {}
         inherited_candidates: dict[str, list[ProcedureIOField]] = {}
         for base in cls.__bases__:
+            if not issubclass(base, _ProcedureIORecord):
+                continue
             for name, field in getattr(base, "fields", {}).items():
                 fields.setdefault(name, field)
                 inherited_candidates.setdefault(name, []).append(field)
