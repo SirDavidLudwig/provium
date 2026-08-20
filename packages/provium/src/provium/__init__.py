@@ -49,6 +49,12 @@ from .procedure import (
     reset_procedure_discovery,
     validate_procedure_configuration,
 )
+from .provenance import (
+    ArtifactRecord,
+    ArtifactReference,
+    ProcedureExecutionRecord,
+    ProcedureRecord,
+)
 
 __version__ = version("provium")
 
@@ -58,6 +64,8 @@ __all__ = [
     "ArtifactDefinition",
     "ArtifactReadBinding",
     "ArtifactReader",
+    "ArtifactRecord",
+    "ArtifactReference",
     "ArtifactWriter",
     "BodyRegion",
     "ArtifactWriteBinding",
@@ -71,6 +79,7 @@ __all__ = [
     "ProcedureContract",
     "ProcedureContractMetadata",
     "ProcedureDefinition",
+    "ProcedureExecutionRecord",
     "ProcedureExecutor",
     "ProcedureIOField",
     "ProcedureIOFieldMetadata",
@@ -82,6 +91,7 @@ __all__ = [
     "ProcedureOutputs",
     "ProcedureProcessContext",
     "ProcedureRepeatedInputField",
+    "ProcedureRecord",
     "ProcedureSetupContext",
     "__version__",
     "compose_configuration",
