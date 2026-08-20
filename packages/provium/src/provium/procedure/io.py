@@ -632,6 +632,14 @@ def build_procedure_inputs[InputsT: ProcedureInputs](
     return record_type._from_bindings(bindings)  # pyright: ignore[reportPrivateUsage]
 
 
+def build_procedure_outputs[OutputsT: ProcedureOutputs](
+    record_type: type[OutputsT],
+    bindings: Mapping[str, object],
+) -> OutputsT:
+    """Construct a typed output record for the procedure executor."""
+    return record_type._from_bindings(bindings)  # pyright: ignore[reportPrivateUsage]
+
+
 def input[ReaderT: ArtifactReader, WriterT: ArtifactWriter](
     artifact: ArtifactDefinition[Artifact[ReaderT, WriterT]],
     *,

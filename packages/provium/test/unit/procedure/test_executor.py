@@ -47,6 +47,10 @@ class ExecutorProcedure(
     def __init__(self) -> None:
         self.setup_configuration: Config | None = None
         self.setup_inputs: Contract.SetupInputs | None = None
+        self.process_configuration: Config | None = None
+        self.process_inputs: Contract.Inputs | None = None
+        self.process_outputs: Contract.Outputs | None = None
+        self.close_calls = 0
         type(self).instances.append(self)
 
     def setup(
@@ -65,7 +69,12 @@ class ExecutorProcedure(
         inputs: Contract.Inputs,
         outputs: Contract.Outputs,
     ) -> None:
-        pass
+        self.process_configuration = configuration
+        self.process_inputs = inputs
+        self.process_outputs = outputs
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 @pytest.fixture(autouse=True)
@@ -255,3 +264,82 @@ def test_prepare_preserves_an_error_raised_inside_the_constructor(
 
     with pytest.raises(TypeError, match="constructor implementation failed"):
         ProcedureExecutor().prepare(DEFINITION)
+
+
+def test_execute_runs_one_typed_invocation_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: ExecutorProcedure,
+    )
+
+    assert (
+        ProcedureExecutor().execute(
+            DEFINITION,
+            configuration_layers=({"value": 4},),
+            inputs={},
+            outputs={},
+        )
+        is None
+    )
+
+    assert len(ExecutorProcedure.instances) == 1
+    procedure = ExecutorProcedure.instances[0]
+    assert isinstance(procedure.process_inputs, Contract.Inputs)
+    assert isinstance(procedure.process_outputs, Contract.Outputs)
+    assert procedure.process_configuration is procedure.setup_configuration
+    assert procedure.close_calls == 1
+
+
+def test_execute_closes_when_processing_bindings_are_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: ExecutorProcedure,
+    )
+
+    with pytest.raises(TypeError, match="unknown field: unexpected"):
+        ProcedureExecutor().execute(
+            DEFINITION,
+            inputs={"unexpected": object()},
+            outputs={},
+        )
+
+    assert len(ExecutorProcedure.instances) == 1
+    procedure = ExecutorProcedure.instances[0]
+    assert procedure.process_inputs is None
+    assert procedure.close_calls == 1
+
+
+def test_execute_preserves_processing_error_when_close_also_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    close_error = RuntimeError("close failed")
+
+    class FailingProcedure(ExecutorProcedure):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: Config,
+            inputs: Contract.Inputs,
+            outputs: Contract.Outputs,
+        ) -> None:
+            raise ValueError("processing failed")
+
+        def close(self) -> None:
+            raise close_error
+
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: FailingProcedure,
+    )
+
+    with pytest.raises(ValueError, match="processing failed") as caught:
+        ProcedureExecutor().execute(DEFINITION, inputs={}, outputs={})
+
+    assert caught.value.__cause__ is close_error

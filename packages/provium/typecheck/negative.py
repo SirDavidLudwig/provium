@@ -7,13 +7,16 @@ from typing import ClassVar
 from provium import (
     Artifact,
     ArtifactDefinition,
+    ArtifactReadBinding,
     ArtifactReader,
+    ArtifactWriteBinding,
     ArtifactWriter,
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
+    ProcedureExecutor,
     ProcedureInputs,
     ProcedureOutputs,
 )
@@ -139,3 +142,15 @@ def reject_mismatched_prepared_types(
     PreparedProcedure(procedure, other_configuration, setup_inputs)  # pyright: ignore[reportArgumentType]
     prepared.execute(inputs=other_inputs, outputs=outputs)  # pyright: ignore[reportArgumentType]
     prepared.execute(inputs=inputs, outputs=other_outputs)  # pyright: ignore[reportArgumentType]
+
+
+def reject_reversed_executor_binding_directions(
+    input_binding: ArtifactReadBinding[Reader],
+    output_binding: ArtifactWriteBinding[Writer],
+) -> None:
+    ProcedureExecutor().execute(
+        OTHER_PROCEDURE,
+        setup_inputs={"setup": output_binding},  # pyright: ignore[reportArgumentType]
+        inputs={"input": output_binding},  # pyright: ignore[reportArgumentType]
+        outputs={"output": input_binding},  # pyright: ignore[reportArgumentType]
+    )

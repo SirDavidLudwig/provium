@@ -18,6 +18,7 @@ from provium import (
     ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
+    ProcedureExecutor,
     ProcedureInputs,
     ProcedureOutputs,
     ProcedureProcessContext,
@@ -143,3 +144,18 @@ def check_prepared_procedure_types(
     )
     assert_type(prepared.configuration, Config)
     assert_type(prepared.execute(inputs=inputs, outputs=outputs), None)
+
+
+def check_executor_mapping_types(
+    input_binding: ArtifactReadBinding[ImageReader],
+    output_binding: ArtifactWriteBinding[ImageWriter],
+) -> None:
+    assert_type(
+        ProcedureExecutor().execute(
+            DETECT_PROCEDURE,
+            setup_inputs={},
+            inputs={"image": input_binding, "images": [input_binding]},
+            outputs={"image": output_binding},
+        ),
+        None,
+    )

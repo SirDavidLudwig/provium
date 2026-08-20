@@ -1,16 +1,23 @@
 """Procedure preparation and execution orchestration."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from inspect import signature
 from typing import Any, cast
 
-from provium.artifact import ArtifactReadBinding
+from provium.artifact import ArtifactReadBinding, ArtifactWriteBinding
 
 from .config import ProcedureConfig, compose_configuration
 from .definition import Procedure, ProcedureDefinition
-from .io import ProcedureInputs, build_procedure_inputs
+from .io import (
+    ProcedureInputs,
+    ProcedureOutputs,
+    build_procedure_inputs,
+    build_procedure_outputs,
+)
 from .prepared import PreparedProcedure
 from .validation import validate_procedure_configuration
+
+type ReadBindingValue = ArtifactReadBinding[Any] | Sequence[ArtifactReadBinding[Any]]
 
 
 class ProcedureExecutor:
@@ -21,7 +28,7 @@ class ProcedureExecutor:
         definition: ProcedureDefinition[ProcedureT],
         *,
         configuration_layers: Iterable[Mapping[str, object]] = (),
-        setup_inputs: Mapping[str, ArtifactReadBinding[Any]] | None = None,
+        setup_inputs: Mapping[str, ReadBindingValue] | None = None,
     ) -> PreparedProcedure[Any, Any, Any]:
         """Create and set up one reusable procedure instance."""
         procedure_type = definition.resolve()
@@ -32,6 +39,40 @@ class ProcedureExecutor:
         inputs = self._prepare_setup_inputs(definition, setup_inputs)
         procedure = self._instantiate(definition, procedure_type)
         return PreparedProcedure(procedure, configuration, inputs)
+
+    def execute[ProcedureT: Procedure[Any, Any, Any, Any]](
+        self,
+        definition: ProcedureDefinition[ProcedureT],
+        *,
+        configuration_layers: Iterable[Mapping[str, object]] = (),
+        setup_inputs: Mapping[str, ReadBindingValue] | None = None,
+        inputs: Mapping[str, ReadBindingValue],
+        outputs: Mapping[str, ArtifactWriteBinding[Any]],
+    ) -> None:
+        """Prepare, process one invocation, and close the procedure."""
+        prepared = self.prepare(
+            definition,
+            configuration_layers=configuration_layers,
+            setup_inputs=setup_inputs,
+        )
+        try:
+            process_inputs = self._prepare_process_inputs(definition, inputs)
+            process_outputs = self._prepare_process_outputs(definition, outputs)
+            prepared.execute(inputs=process_inputs, outputs=process_outputs)
+        except BaseException as error:
+            self._close_after_failure(prepared, error)
+        prepared.close()
+
+    @staticmethod
+    def _close_after_failure(
+        prepared: PreparedProcedure[Any, Any, Any],
+        error: BaseException,
+    ) -> None:
+        try:
+            prepared.close()
+        except BaseException as close_error:
+            raise error from close_error
+        raise error
 
     @staticmethod
     def _instantiate(
@@ -72,7 +113,7 @@ class ProcedureExecutor:
     @staticmethod
     def _prepare_setup_inputs(
         definition: ProcedureDefinition[Any],
-        supplied: Mapping[str, ArtifactReadBinding[Any]] | None,
+        supplied: Mapping[str, ReadBindingValue] | None,
     ) -> ProcedureInputs:
         bindings: Mapping[str, object] = {} if supplied is None else supplied
         record_type = cast(
@@ -80,6 +121,28 @@ class ProcedureExecutor:
             getattr(definition.contract, "SetupInputs"),
         )
         return build_procedure_inputs(record_type, bindings)
+
+    @staticmethod
+    def _prepare_process_inputs(
+        definition: ProcedureDefinition[Any],
+        supplied: Mapping[str, ReadBindingValue],
+    ) -> ProcedureInputs:
+        record_type = cast(
+            type[ProcedureInputs],
+            getattr(definition.contract, "Inputs"),
+        )
+        return build_procedure_inputs(record_type, supplied)
+
+    @staticmethod
+    def _prepare_process_outputs(
+        definition: ProcedureDefinition[Any],
+        supplied: Mapping[str, ArtifactWriteBinding[Any]],
+    ) -> ProcedureOutputs:
+        record_type = cast(
+            type[ProcedureOutputs],
+            getattr(definition.contract, "Outputs"),
+        )
+        return build_procedure_outputs(record_type, supplied)
 
 
 __all__ = ["ProcedureExecutor"]
