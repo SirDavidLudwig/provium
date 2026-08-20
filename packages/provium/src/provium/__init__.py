@@ -12,10 +12,12 @@ from .artifact import (
     ArtifactWriteBinding,
     ArtifactWriter,
     BodyRegion,
+    StagedArtifact,
     decode_header,
     discover_artifact_catalogs,
     encode_header,
     reset_artifact_discovery,
+    stage_artifact,
 )
 from .procedure import (
     ConfigurationSnapshot,
@@ -75,6 +77,7 @@ __all__ = [
     "ArtifactReference",
     "ArtifactWriter",
     "BodyRegion",
+    "StagedArtifact",
     "ArtifactWriteBinding",
     "ConfigurationSnapshot",
     "JsonValue",
@@ -118,5 +121,6 @@ __all__ = [
     "reset_artifact_discovery",
     "reset_procedure_discovery",
     "session",
+    "stage_artifact",
     "validate_procedure_configuration",
 ]

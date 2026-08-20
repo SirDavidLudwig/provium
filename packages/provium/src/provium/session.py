@@ -76,7 +76,7 @@ class Session:
         if exc_type is None and close_error is not None:
             raise close_error
 
-    def _manage(self, resource: _Closeable) -> None:
+    def manage(self, resource: _Closeable) -> None:
         """Register a resource to close when this session exits."""
         if not self.active or current_context() is not self:
             raise RuntimeError("managed resources require the active session")
@@ -140,7 +140,7 @@ class Session:
         except BaseException:
             stream.close()
             raise
-        self._manage(reader)
+        self.manage(reader)
         self._readers.append(reader)
         self._inputs.setdefault(record.reference.identity, record)
         self._input_lineage = merged_lineage

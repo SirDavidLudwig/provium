@@ -8,6 +8,7 @@ from provium import (
     Artifact,
     ArtifactCatalog,
     ArtifactDefinition,
+    ArtifactHeader,
     ArtifactReadBinding,
     ArtifactReader,
     ArtifactWriteBinding,
@@ -22,11 +23,14 @@ from provium import (
     ProcedureInputs,
     ProcedureOutputs,
     ProcedureProcessContext,
+    Session,
+    StagedArtifact,
     input,
     optional_input,
     optional_output,
     output,
     repeated_input,
+    stage_artifact,
     validate_procedure_configuration,
 )
 
@@ -60,6 +64,17 @@ assert_type(IMAGE_ARTIFACT.resolve(), type[ImageArtifact])
 assert_type(
     ArtifactCatalog().register(IMAGE_ARTIFACT), ArtifactDefinition[ImageArtifact]
 )
+
+
+def check_staging_types(
+    binding: ArtifactWriteBinding[ImageWriter],
+    metadata: ArtifactHeader,
+    owner: Session,
+) -> None:
+    assert_type(
+        stage_artifact(binding, metadata, owner),
+        StagedArtifact[ImageWriter],
+    )
 
 
 class Config(ProcedureConfig):
