@@ -15,7 +15,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.10,<3",
+]
 
 [project.urls]
 Homepage = "https://github.com/SirDavidLudwig/provium"
@@ -27,7 +29,6 @@ visualization = [
     "graphviz>=0.20",
 ]
 test = [
-    "pydantic>=2.10",
     "pyright>=1.1.411",
     "pytest>=8.3",
     "pytest-cov>=6.0",

@@ -14,11 +14,14 @@ from .artifact import (
 from .procedure import (
     Procedure,
     ProcedureCatalog,
+    ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
     ProcedureInputs,
     ProcedureOutputs,
+    compose_configuration,
     discover_procedure_catalogs,
+    load_json_configuration,
     reset_procedure_discovery,
 )
 
@@ -32,13 +35,16 @@ __all__ = [
     "ArtifactWriter",
     "Procedure",
     "ProcedureCatalog",
+    "ProcedureConfig",
     "ProcedureContract",
     "ProcedureDefinition",
     "ProcedureInputs",
     "ProcedureOutputs",
     "__version__",
+    "compose_configuration",
     "discover_artifact_catalogs",
     "discover_procedure_catalogs",
+    "load_json_configuration",
     "reset_artifact_discovery",
     "reset_procedure_discovery",
 ]
