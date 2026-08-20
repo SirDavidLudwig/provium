@@ -5,6 +5,7 @@ from .config import (
     ProcedureConfig,
     compose_configuration,
     load_json_configuration,
+    load_yaml_configuration,
 )
 from .definition import (
     Procedure,
@@ -26,5 +27,6 @@ __all__ = [
     "compose_configuration",
     "discover_procedure_catalogs",
     "load_json_configuration",
+    "load_yaml_configuration",
     "reset_procedure_discovery",
 ]

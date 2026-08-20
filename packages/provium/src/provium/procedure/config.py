@@ -3,9 +3,10 @@
 import json
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
+from importlib import import_module
 from os import PathLike
 from pathlib import Path
-from typing import Never, cast
+from typing import Never, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -18,6 +19,10 @@ class ProcedureConfig(BaseModel):
         frozen=True,
         validate_default=True,
     )
+
+
+class _YamlModule(Protocol):
+    def safe_load(self, stream: str) -> object: ...
 
 
 def compose_configuration(
@@ -47,6 +52,29 @@ def load_json_configuration(path: str | PathLike[str]) -> dict[str, object]:
     if not isinstance(value, dict):
         raise TypeError(f"configuration root must be an object: {configuration_path}")
     return cast(dict[str, object], value)
+
+
+def load_yaml_configuration(path: str | PathLike[str]) -> dict[str, object]:
+    """Load one raw configuration layer from a UTF-8 YAML mapping."""
+    try:
+        yaml = cast(_YamlModule, import_module("yaml"))
+    except ModuleNotFoundError as error:
+        if error.name != "yaml":
+            raise
+        raise RuntimeError(
+            "YAML configuration support requires installing provium[yaml]"
+        ) from error
+
+    configuration_path = Path(path)
+    value = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
+    if not isinstance(value, Mapping):
+        raise TypeError(f"configuration root must be a mapping: {configuration_path}")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise TypeError(
+            f"configuration root keys must be strings: {configuration_path}"
+        )
+    return dict(cast(Mapping[str, object], mapping))
 
 
 def _merge_mappings(
@@ -80,4 +108,5 @@ __all__ = [
     "ProcedureConfig",
     "compose_configuration",
     "load_json_configuration",
+    "load_yaml_configuration",
 ]

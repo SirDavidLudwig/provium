@@ -7,7 +7,12 @@ from types import MappingProxyType
 import pytest
 from pydantic import Field, ValidationError, field_validator
 
-from provium import ProcedureConfig, compose_configuration, load_json_configuration
+from provium import (
+    ProcedureConfig,
+    compose_configuration,
+    load_json_configuration,
+    load_yaml_configuration,
+)
 
 
 class ExampleConfig(ProcedureConfig):
@@ -161,3 +166,90 @@ def test_json_configuration_accepts_string_and_path_like_paths(
 
     assert load_json_configuration(str(path)) == {}
     assert load_json_configuration(path) == {}
+
+
+def test_yaml_configuration_loads_a_mapping(tmp_path: Path) -> None:
+    path = tmp_path / "configuration.yaml"
+    path.write_text(
+        "name: café\nnested:\n  enabled: true\n",
+        encoding="utf-8",
+    )
+
+    assert load_yaml_configuration(path) == {
+        "name": "café",
+        "nested": {"enabled": True},
+    }
+
+
+@pytest.mark.parametrize("document", ["null\n", "true\n", "1\n", "value\n", "- 1\n"])
+def test_yaml_configuration_rejects_a_non_mapping_root(
+    tmp_path: Path, document: str
+) -> None:
+    path = tmp_path / "configuration.yaml"
+    path.write_text(document, encoding="utf-8")
+
+    with pytest.raises(TypeError, match="root must be a mapping"):
+        load_yaml_configuration(path)
+
+
+def test_yaml_configuration_rejects_non_string_root_keys(tmp_path: Path) -> None:
+    path = tmp_path / "configuration.yaml"
+    path.write_text("1: value\n", encoding="utf-8")
+
+    with pytest.raises(TypeError, match="root keys must be strings"):
+        load_yaml_configuration(path)
+
+
+def test_yaml_configuration_reports_its_optional_dependency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "configuration.yaml"
+    path.write_text("{}", encoding="utf-8")
+
+    def missing_yaml(name: str) -> object:
+        assert name == "yaml"
+        raise ModuleNotFoundError(name="yaml")
+
+    monkeypatch.setattr("provium.procedure.config.import_module", missing_yaml)
+
+    with pytest.raises(RuntimeError, match=r"provium\[yaml\]"):
+        load_yaml_configuration(path)
+
+
+def test_yaml_configuration_preserves_transitive_import_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "configuration.yaml"
+    path.write_text("{}", encoding="utf-8")
+    error = ModuleNotFoundError(name="yaml_dependency")
+
+    def broken_yaml(name: str) -> object:
+        assert name == "yaml"
+        raise error
+
+    monkeypatch.setattr("provium.procedure.config.import_module", broken_yaml)
+
+    with pytest.raises(ModuleNotFoundError) as raised:
+        load_yaml_configuration(path)
+
+    assert raised.value is error
+
+
+def test_yaml_configuration_preserves_parser_errors(tmp_path: Path) -> None:
+    import yaml
+
+    path = tmp_path / "configuration.yaml"
+    path.write_text("value: [", encoding="utf-8")
+
+    with pytest.raises(yaml.YAMLError):
+        load_yaml_configuration(path)
+
+
+def test_yaml_configuration_accepts_string_and_path_like_paths(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "configuration.yaml"
+    path.write_text("{}", encoding="utf-8")
+
+    assert load_yaml_configuration(str(path)) == {}
+    assert load_yaml_configuration(path) == {}

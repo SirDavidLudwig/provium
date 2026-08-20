@@ -28,7 +28,11 @@ Repository = "https://github.com/SirDavidLudwig/provium"
 visualization = [
     "graphviz>=0.20",
 ]
+yaml = [
+    "PyYAML>=6,<7",
+]
 test = [
+    "PyYAML>=6,<7",
     "pyright>=1.1.411",
     "pytest>=8.3",
     "pytest-cov>=6.0",
