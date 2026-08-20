@@ -105,6 +105,12 @@ class ArtifactWriteBinding[WriterT: ArtifactWriter]:
         normalized = _validate_binding(self.artifact, self.path)
         object.__setattr__(self, "path", normalized)
 
+    def open(self) -> WriterT:
+        """Open the staged writer authorized for the active procedure callback."""
+        from provium.procedure.authorization import open_authorized_output
+
+        return open_authorized_output(self)
+
 
 __all__ = [
     "ArtifactReadBinding",

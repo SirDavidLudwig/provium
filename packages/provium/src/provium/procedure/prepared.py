@@ -1,11 +1,16 @@
 """Reusable prepared procedure instances."""
 
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
-from .config import ProcedureConfig
+from provium.artifact import ArtifactWriteBinding
+from provium.provenance import ProcedureRecord
+
+from .authorization import authorize_outputs
+from .config import ConfigurationSnapshot, ProcedureConfig
 from .context import ProcedureProcessContext, ProcedureSetupContext
 from .definition import Procedure
+from .execution import ProcedureExecutionSession
 from .io import ProcedureInputs, ProcedureOutputs
 
 
@@ -38,14 +43,59 @@ class PreparedProcedure[
         """Process one invocation on the prepared instance."""
         self._begin_execution()
         try:
-            self._procedure.process(
-                ProcedureProcessContext(),
-                self._configuration,
-                inputs,
-                outputs,
-            )
+            output_bindings = self._output_bindings(outputs)
+            if output_bindings:
+                self._execute_with_outputs(inputs, outputs, output_bindings)
+            else:
+                with authorize_outputs({}, {}):
+                    self._process(inputs, outputs)
         finally:
             self._finish_execution()
+
+    def _execute_with_outputs(
+        self,
+        inputs: InputsT,
+        outputs: OutputsT,
+        bindings: dict[str, ArtifactWriteBinding[Any]],
+    ) -> None:
+        with ProcedureExecutionSession(self._procedure_record()) as execution:
+            writers = execution.stage_outputs(bindings)
+            with authorize_outputs(bindings, writers):
+                self._process(inputs, outputs)
+
+    def _process(self, inputs: InputsT, outputs: OutputsT) -> None:
+        self._procedure.process(
+            ProcedureProcessContext(),
+            self._configuration,
+            inputs,
+            outputs,
+        )
+
+    @staticmethod
+    def _output_bindings(
+        outputs: ProcedureOutputs,
+    ) -> dict[str, ArtifactWriteBinding[Any]]:
+        values = cast(dict[str, object], object.__getattribute__(outputs, "_values"))
+        return {
+            name: value
+            for name, value in values.items()
+            if isinstance(value, ArtifactWriteBinding)
+        }
+
+    def _procedure_record(self) -> ProcedureRecord:
+        definition = self._procedure.definition
+        if self._configuration is None:
+            return ProcedureRecord(
+                definition.identifier,
+                definition.contract.metadata.digest,
+            )
+        snapshot = ConfigurationSnapshot.from_configuration(self._configuration)
+        return ProcedureRecord(
+            definition.identifier,
+            definition.contract.metadata.digest,
+            snapshot.value,
+            "pydantic-v2",
+        )
 
     def close(self) -> None:
         """Close the prepared instance exactly once."""
