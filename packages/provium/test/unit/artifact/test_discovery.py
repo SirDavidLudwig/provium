@@ -73,7 +73,7 @@ def test_discovers_and_merges_artifact_catalogs(
     discovered = discover_artifact_catalogs()
 
     assert set(discovered.definitions) == {"example.FirstV1", "example.SecondV1"}
-    assert FakeEntryPoints.selected_groups == ["provium.catalogs"]
+    assert FakeEntryPoints.selected_groups == ["provium.artifact_catalogs"]
 
 
 def test_discovery_is_cached_until_reset(monkeypatch: pytest.MonkeyPatch) -> None:

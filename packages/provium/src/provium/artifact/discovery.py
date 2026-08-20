@@ -4,7 +4,7 @@ from importlib import metadata
 
 from .catalog import ArtifactCatalog
 
-ENTRY_POINT_GROUP = "provium.catalogs"
+ENTRY_POINT_GROUP = "provium.artifact_catalogs"
 _discovered_catalog: ArtifactCatalog | None = None
 
 

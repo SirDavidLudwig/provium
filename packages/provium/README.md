@@ -199,7 +199,7 @@ catalog.register(INTEGER_ARTIFACT)
 Expose that catalog from `pyproject.toml` so Provium can discover it:
 
 ```toml
-[project.entry-points."provium.catalogs"]
+[project.entry-points."provium.artifact_catalogs"]
 example = "your_package.catalog:catalog"
 ```
 

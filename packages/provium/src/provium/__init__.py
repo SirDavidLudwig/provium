@@ -16,6 +16,7 @@ from .artifact import (
     decode_header,
     discover_artifact_catalogs,
     encode_header,
+    read_artifact_header,
     reset_artifact_discovery,
     stage_artifact,
 )
@@ -130,6 +131,7 @@ __all__ = [
     "optional_output",
     "output",
     "repeated_input",
+    "read_artifact_header",
     "reset_artifact_discovery",
     "reset_procedure_discovery",
     "session",

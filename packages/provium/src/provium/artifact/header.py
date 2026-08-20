@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import struct
 from dataclasses import dataclass, field
+from os import PathLike
+from pathlib import Path
 from typing import Any, Self, cast
 
 from provium.provenance import ArtifactLineage, ArtifactReference
@@ -206,6 +208,18 @@ def decode_header(data: bytes | bytearray | memoryview) -> ArtifactHeader:
     return header
 
 
+def read_artifact_header(path: str | PathLike[str]) -> ArtifactHeader:
+    """Read an artifact container's header without reading its body."""
+    with Path(path).open("rb") as stream:
+        prefix = stream.read(PREFIX_SIZE)
+        if len(prefix) < PREFIX_SIZE:
+            raise ValueError("truncated fixed header")
+        _, _, metadata_offset, metadata_length, _, _ = _PREFIX.unpack(prefix)
+        metadata_end = metadata_offset + metadata_length
+        stream.seek(0)
+        return decode_header(stream.read(metadata_end))
+
+
 __all__ = [
     "CONTAINER_VERSION",
     "MAGIC",
@@ -213,4 +227,5 @@ __all__ = [
     "ArtifactHeader",
     "decode_header",
     "encode_header",
+    "read_artifact_header",
 ]

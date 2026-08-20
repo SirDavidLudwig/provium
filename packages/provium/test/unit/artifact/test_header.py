@@ -2,6 +2,7 @@
 
 import json
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,7 @@ from provium import (
     ProcedureRecord,
     decode_header,
     encode_header,
+    read_artifact_header,
 )
 from provium.artifact.header import CONTAINER_VERSION, MAGIC, PREFIX_SIZE
 
@@ -61,6 +63,22 @@ def test_header_encoding_round_trips_every_field_canonically() -> None:
         sort_keys=True,
     ).encode("utf-8")
     assert encode_header(expected) == encode_header(header())
+
+
+def test_artifact_header_can_be_read_from_a_container_path(tmp_path: Path) -> None:
+    expected = header()
+    path = tmp_path / "artifact.provium"
+    path.write_bytes(encode_header(expected) + b"unread body data")
+
+    assert read_artifact_header(path) == expected
+
+
+def test_read_artifact_header_rejects_a_truncated_prefix(tmp_path: Path) -> None:
+    path = tmp_path / "truncated.provium"
+    path.write_bytes(MAGIC)
+
+    with pytest.raises(ValueError, match="truncated fixed header"):
+        read_artifact_header(path)
 
 
 def test_fixed_prefix_defines_every_container_region() -> None:

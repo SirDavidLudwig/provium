@@ -42,7 +42,7 @@ def install_entry_point_distribution(
             version = "1.0.0"
             requires-python = ">=3.12"
 
-            [project.entry-points."provium.catalogs"]
+            [project.entry-points."provium.artifact_catalogs"]
             "{artifact_value[0]}" = "{artifact_value[1]}"
 
             [project.entry-points."provium.procedure_catalogs"]
