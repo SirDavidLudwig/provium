@@ -1,5 +1,6 @@
 """Reusable prepared procedure instances."""
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Lock
@@ -15,7 +16,12 @@ from .config import ConfigurationSnapshot, ProcedureConfig
 from .context import CancellationToken, ProcedureProcessContext, ProcedureSetupContext
 from .definition import Procedure, ProcedureDefinition
 from .execution import ProcedureExecutionSession
-from .io import ProcedureInputs, ProcedureOutputs
+from .io import (
+    ProcedureInputs,
+    ProcedureOutputs,
+    build_procedure_inputs,
+    build_procedure_outputs,
+)
 from .result import ProcedureExecutionResult
 
 
@@ -82,21 +88,68 @@ class PreparedProcedure[
     def execute(
         self,
         *,
-        inputs: InputsT,
-        outputs: OutputsT,
+        inputs: Mapping[
+            str, ArtifactReadBinding[Any] | Sequence[ArtifactReadBinding[Any]]
+        ]
+        | InputsT,
+        outputs: Mapping[str, ArtifactWriteBinding[Any]] | OutputsT,
         cancellation: CancellationToken | None = None,
     ) -> ProcedureExecutionResult:
         """Process one invocation on the prepared instance."""
         self._begin_execution()
         try:
+            prepared_inputs = self._prepare_inputs(inputs)
+            prepared_outputs = self._prepare_outputs(outputs)
             token = cancellation or CancellationToken()
             token.raise_if_cancelled()
             with TemporaryDirectory(prefix="provium-process-") as directory:
                 context = ProcedureProcessContext(token, Path(directory))
                 with self._setup_session:
-                    return self._execute_active(inputs, outputs, context)
+                    return self._execute_active(
+                        prepared_inputs,
+                        prepared_outputs,
+                        context,
+                    )
         finally:
             self._finish_execution()
+
+    def _prepare_inputs(
+        self,
+        supplied: Mapping[
+            str, ArtifactReadBinding[Any] | Sequence[ArtifactReadBinding[Any]]
+        ]
+        | InputsT,
+    ) -> InputsT:
+        if isinstance(supplied, ProcedureInputs):
+            return cast(InputsT, supplied)
+        definition = self._procedure.definition
+        try:
+            return cast(
+                InputsT,
+                build_procedure_inputs(definition.contract.Inputs, supplied),
+            )
+        except (TypeError, ValueError) as error:
+            raise type(error)(
+                f"invalid processing inputs for procedure "
+                f"{definition.identifier}: {error}"
+            ) from error
+
+    def _prepare_outputs(
+        self,
+        supplied: Mapping[str, ArtifactWriteBinding[Any]] | OutputsT,
+    ) -> OutputsT:
+        if isinstance(supplied, ProcedureOutputs):
+            return cast(OutputsT, supplied)
+        definition = self._procedure.definition
+        try:
+            return cast(
+                OutputsT,
+                build_procedure_outputs(definition.contract.Outputs, supplied),
+            )
+        except (TypeError, ValueError) as error:
+            raise type(error)(
+                f"invalid outputs for procedure {definition.identifier}: {error}"
+            ) from error
 
     def _execute_active(
         self,

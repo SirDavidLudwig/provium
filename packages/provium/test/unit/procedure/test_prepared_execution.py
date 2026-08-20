@@ -160,6 +160,44 @@ def test_prepared_execution_stages_and_publishes_declared_output(
         result.outputs["other"] = result.outputs["result"]  # type: ignore[index]
 
 
+def test_prepared_execution_validates_public_input_mappings(
+    tmp_path: Path,
+) -> None:
+    prepared = prepare()
+
+    with pytest.raises(
+        TypeError,
+        match=(
+            "invalid processing inputs for procedure example.PreparedOutputV1: "
+            "unknown field: unexpected"
+        ),
+    ):
+        prepared.execute(inputs={"unexpected": object()}, outputs={})  # type: ignore[dict-item]
+
+    result = prepared.execute(
+        inputs={},
+        outputs={"result": BytesArtifact.bind_write(tmp_path / "result.pa")},
+    )
+    prepared.close()
+
+    assert "result" in result.outputs
+
+
+def test_prepared_execution_validates_public_output_mappings() -> None:
+    prepared = prepare()
+
+    with pytest.raises(
+        TypeError,
+        match=(
+            "invalid outputs for procedure example.PreparedOutputV1: "
+            "missing required field: result"
+        ),
+    ):
+        prepared.execute(inputs={}, outputs={})
+
+    prepared.close()
+
+
 def test_callback_rejects_an_equal_but_undeclared_output_binding(
     tmp_path: Path,
 ) -> None:

@@ -37,6 +37,7 @@ addopts = [
     "--cov-fail-under=100",
 ]
 testpaths = ["test"]
+pythonpath = ["../provium/test"]
 
 [tool.coverage.run]
 branch = true

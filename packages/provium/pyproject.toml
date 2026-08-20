@@ -59,6 +59,7 @@ addopts = [
     "--cov-fail-under=100",
 ]
 testpaths = ["test"]
+pythonpath = ["test"]
 
 [tool.coverage.run]
 branch = true

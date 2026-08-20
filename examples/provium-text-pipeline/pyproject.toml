@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provium-text-pipeline-example"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["provium>=0.5.0"]
+description = "A full-fledged Provium example plugin for text tokenization and aggregation workflows."
+readme = "README.md"
+
+[project.entry-points."provium.catalogs"]
+example = "provium_text_pipeline.artifacts.catalog:artifact_catalog"
+
+[project.entry-points."provium.artifact_catalogs"]
+example = "provium_text_pipeline.artifacts.catalog:artifact_catalog"
+
+[project.entry-points."provium.procedure_catalogs"]
+example = "provium_text_pipeline.procedures.catalog:procedure_catalog"
+
+[tool.setuptools.packages.find]
+where = ["src"]
