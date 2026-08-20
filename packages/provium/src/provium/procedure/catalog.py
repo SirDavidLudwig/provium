@@ -11,7 +11,7 @@ class ProcedureCatalog:
     """Map persistent procedure identifiers to their definitions."""
 
     def __init__(self) -> None:
-        self._definitions: dict[str, ProcedureDefinition] = {}
+        self._definitions: dict[str, ProcedureDefinition[Any]] = {}
 
     def register[ProcedureT: Procedure[Any, Any, Any, Any]](
         self,
@@ -27,12 +27,12 @@ class ProcedureCatalog:
         self._definitions[definition.identifier] = definition
         return definition
 
-    def resolve(self, identifier: str) -> ProcedureDefinition:
+    def resolve(self, identifier: str) -> ProcedureDefinition[Any]:
         """Return the definition registered for an identifier."""
         return self._definitions[identifier]
 
     @property
-    def definitions(self) -> Mapping[str, ProcedureDefinition]:
+    def definitions(self) -> Mapping[str, ProcedureDefinition[Any]]:
         """Expose registered definitions through a read-only mapping."""
         return MappingProxyType(self._definitions)
 

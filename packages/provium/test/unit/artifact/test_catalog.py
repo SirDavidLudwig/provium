@@ -83,7 +83,7 @@ def test_definition_lazily_resolves_an_artifact_class(
         "example.artifacts:nested.Integer",
         "An integer artifact.",
     )
-    IntegerArtifact.definition = definition
+    monkeypatch.setattr(IntegerArtifact, "definition", definition)
 
     assert imports == []
     assert definition.resolve() is IntegerArtifact

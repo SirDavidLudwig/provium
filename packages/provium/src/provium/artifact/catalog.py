@@ -11,7 +11,7 @@ class ArtifactCatalog:
     """Map persistent artifact identifiers to their definitions."""
 
     def __init__(self) -> None:
-        self._definitions: dict[str, ArtifactDefinition] = {}
+        self._definitions: dict[str, ArtifactDefinition[Any]] = {}
 
     def register[ArtifactT: Artifact[Any, Any]](
         self,
@@ -27,12 +27,12 @@ class ArtifactCatalog:
         self._definitions[definition.identifier] = definition
         return definition
 
-    def resolve(self, identifier: str) -> ArtifactDefinition:
+    def resolve(self, identifier: str) -> ArtifactDefinition[Any]:
         """Return the definition registered for an identifier."""
         return self._definitions[identifier]
 
     @property
-    def definitions(self) -> Mapping[str, ArtifactDefinition]:
+    def definitions(self) -> Mapping[str, ArtifactDefinition[Any]]:
         """Expose registered definitions through a read-only mapping."""
         return MappingProxyType(self._definitions)
 

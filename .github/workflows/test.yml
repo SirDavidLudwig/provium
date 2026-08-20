@@ -16,13 +16,16 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -m pip install ruff
+      - run: python -m pip install pyright ruff
       - name: Lint Provium core
         working-directory: packages/provium
-        run: ruff check src test
+        run: ruff check src test typecheck
       - name: Check Provium core formatting
         working-directory: packages/provium
-        run: ruff format --check src test
+        run: ruff format --check src test typecheck
+      - name: Check Provium core types
+        working-directory: packages/provium
+        run: python -m pyright
       - name: Lint Provium CLI
         working-directory: packages/provium-cli
         run: ruff check src test

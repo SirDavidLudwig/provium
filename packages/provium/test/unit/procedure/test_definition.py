@@ -156,12 +156,16 @@ def test_procedure_definition_resolves_lazily_and_checks_resolution_metadata(
         None,
         Contract,
     )
-    ExampleProcedure.definition = ProcedureDefinition(
-        "example.ExampleV1",
-        "example.procedures:nested.Example",
-        "Different label",
-        "Different description.",
-        Contract,
+    monkeypatch.setattr(
+        ExampleProcedure,
+        "definition",
+        ProcedureDefinition(
+            "example.ExampleV1",
+            "example.procedures:nested.Example",
+            "Different label",
+            "Different description.",
+            Contract,
+        ),
     )
 
     assert imports == []

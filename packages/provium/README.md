@@ -346,15 +346,15 @@ python -m pip install --upgrade pip
 python -m pip install -e '.[test]'
 ```
 
-Run the test suite:
+Run the complete repository checks from the workspace root:
 
 ```bash
-pytest
+make check
 ```
 
-This also runs Ruff linting and `ruff format --check` over `src` and `test`.
-The project requires 100% statement and branch coverage for the `provium`
-package.
+This runs Ruff linting and formatting checks, Pyright against the public typing
+fixtures, and both package test suites. The project requires 100% statement and
+branch coverage for the `provium` package.
 
 ## License
 

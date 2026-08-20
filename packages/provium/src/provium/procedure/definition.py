@@ -30,15 +30,9 @@ class ProcedureContract[ConfigT]:
     """Lightweight configuration and I/O contract for a procedure."""
 
     configuration: ClassVar[type[object] | None] = None
-
-    class SetupInputs(ProcedureInputs):
-        pass
-
-    class Inputs(ProcedureInputs):
-        pass
-
-    class Outputs(ProcedureOutputs):
-        pass
+    SetupInputs: ClassVar[type[ProcedureInputs]] = ProcedureInputs
+    Inputs: ClassVar[type[ProcedureInputs]] = ProcedureInputs
+    Outputs: ClassVar[type[ProcedureOutputs]] = ProcedureOutputs
 
 
 class Procedure[ConfigT, SetupInputsT, InputsT, OutputsT]:

@@ -28,6 +28,7 @@ visualization = [
 ]
 test = [
     "pydantic>=2.10",
+    "pyright>=1.1.411",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.16",
@@ -39,6 +40,9 @@ docs = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+provium = ["py.typed"]
 
 [tool.pytest.ini_options]
 addopts = [
@@ -59,6 +63,14 @@ source = ["provium"]
 fail_under = 100
 show_missing = true
 skip_covered = false
+
+[tool.pyright]
+include = ["src", "typecheck"]
+extraPaths = ["src", "../provium-cli/src"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportUnnecessaryIsInstance = "none"
+reportUnnecessaryTypeIgnoreComment = "error"
 
 [tool.ruff]
 target-version = "py312"
