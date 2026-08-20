@@ -1,4 +1,7 @@
 import json
+import pickle
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
@@ -100,6 +103,13 @@ def test_procedure_definition_exposes_lightweight_metadata() -> None:
     assert EXAMPLE_DEFINITION.label == "Example"
     assert EXAMPLE_DEFINITION.description == "An example procedure."
     assert EXAMPLE_DEFINITION.contract is Contract
+
+
+def test_procedure_definition_can_cross_process_serialization_boundaries() -> None:
+    restored = pickle.loads(pickle.dumps(EXAMPLE_DEFINITION))
+
+    assert restored == EXAMPLE_DEFINITION
+    assert restored.contract is Contract
 
 
 def test_procedure_definition_builds_an_ordered_invocation_synopsis() -> None:
@@ -497,7 +507,263 @@ def test_procedure_definition_resolves_lazily_and_checks_resolution_metadata(
 
     assert imports == []
     assert definition.resolve() is ExampleProcedure
+    assert definition.resolve() is ExampleProcedure
     assert imports == ["example.procedures"]
+
+
+def test_procedure_definition_rejects_a_nonclass_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=object()),
+    )
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    with pytest.raises(TypeError, match="must resolve to a Procedure class"):
+        definition.resolve()
+
+
+def test_procedure_definition_rejects_a_nonprocedure_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NotAProcedure:
+        definition = EXAMPLE_DEFINITION
+
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=NotAProcedure),
+    )
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    with pytest.raises(TypeError, match="must resolve to a Procedure class"):
+        definition.resolve()
+
+
+def test_procedure_definition_requires_the_class_to_declare_its_definition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingDefinition(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        pass
+
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=MissingDefinition),
+    )
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    with pytest.raises(TypeError, match="must declare a ProcedureDefinition"):
+        definition.resolve()
+
+
+def test_procedure_definition_rejects_mismatched_generic_io_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OtherInputs(ProcedureInputs):
+        pass
+
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class MismatchedProcedure(Procedure[Config, SetupInputs, OtherInputs, Outputs]):
+        pass
+
+    MismatchedProcedure.definition = definition
+
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=MismatchedProcedure),
+    )
+
+    with pytest.raises(TypeError, match="generic specialization does not match"):
+        definition.resolve()
+
+
+def test_procedure_definition_rejects_an_unspecialized_procedure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class UnspecializedProcedure(Procedure):
+        pass
+
+    UnspecializedProcedure.definition = definition
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=UnspecializedProcedure),
+    )
+
+    with pytest.raises(TypeError, match="generic specialization does not match"):
+        definition.resolve()
+
+
+def test_procedure_definition_rejects_a_partial_generic_specialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class PartialProcedure[InputsT: ProcedureInputs](
+        Procedure[Config, SetupInputs, InputsT, Outputs]
+    ):
+        pass
+
+    PartialProcedure.definition = definition
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=PartialProcedure),
+    )
+
+    with pytest.raises(TypeError, match="generic specialization does not match"):
+        definition.resolve()
+
+
+def test_procedure_definition_detects_recursive_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    def import_module(name: str) -> object:
+        definition.resolve()
+        raise AssertionError("recursive resolution should fail first")
+
+    monkeypatch.setattr("provium.procedure.definition.import_module", import_module)
+
+    with pytest.raises(RuntimeError, match="recursive procedure resolution"):
+        definition.resolve()
+
+
+def test_equivalent_definitions_detect_recursive_target_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+    second = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+    imports = 0
+
+    def import_module(name: str) -> object:
+        nonlocal imports
+        imports += 1
+        if imports == 1:
+            second.resolve()
+        return SimpleNamespace(value=ExampleProcedure)
+
+    monkeypatch.setattr("provium.procedure.definition.import_module", import_module)
+
+    with pytest.raises(RuntimeError, match="recursive procedure resolution"):
+        first.resolve()
+
+
+def test_procedure_definition_resolution_is_thread_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class Target(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        pass
+
+    Target.definition = definition
+    barrier = Barrier(4)
+    imports: list[str] = []
+
+    def import_module(name: str) -> object:
+        imports.append(name)
+        return SimpleNamespace(value=Target)
+
+    def resolve() -> type[Target]:
+        barrier.wait()
+        return definition.resolve()
+
+    monkeypatch.setattr("provium.procedure.definition.import_module", import_module)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        resolved = list(executor.map(lambda _: resolve(), range(4)))
+
+    assert resolved == [Target] * 4
+    assert imports == ["example.procedures"]
+
+
+def test_resolution_rechecks_the_cache_after_acquiring_the_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class PopulateCacheOnEntry:
+        def __enter__(self) -> None:
+            object.__setattr__(definition, "_resolved_class", ExampleProcedure)
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "provium.procedure.definition._PROCEDURE_RESOLUTION_LOCK",
+        PopulateCacheOnEntry(),
+    )
+
+    assert definition.resolve() is ExampleProcedure
 
 
 def test_procedure_definition_rejects_mismatched_resolution_metadata(
@@ -510,15 +776,19 @@ def test_procedure_definition_rejects_mismatched_resolution_metadata(
         None,
         Contract,
     )
-    target = SimpleNamespace(
-        definition=SimpleNamespace(
-            identifier="example.OtherV1",
-            target="example.procedures:ExampleProcedure",
+
+    class Target(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        definition = ProcedureDefinition(
+            "example.OtherV1",
+            "example.procedures:value",
+            "Example",
+            None,
+            Contract,
         )
-    )
+
     monkeypatch.setattr(
         "provium.procedure.definition.import_module",
-        lambda name: SimpleNamespace(value=target),
+        lambda name: SimpleNamespace(value=Target),
     )
     definition = ProcedureDefinition(
         "example.ExampleV1",
@@ -528,5 +798,5 @@ def test_procedure_definition_rejects_mismatched_resolution_metadata(
         Contract,
     )
 
-    with pytest.raises(ValueError, match="identifier and target"):
+    with pytest.raises(ValueError, match="identifier, target"):
         definition.resolve()

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from importlib import import_module
 from shlex import quote
+from threading import RLock, local
 from typing import Any, ClassVar, Literal, cast, get_args, get_origin
 
 from .config import ProcedureConfig
@@ -34,6 +35,17 @@ _CONTRACT_COMPILATION_HOOKS = frozenset(
         "_validated_configuration",
     }
 )
+
+
+class _ResolutionState(local):
+    targets: set[str]
+
+    def __init__(self) -> None:
+        self.targets = set()
+
+
+_PROCEDURE_RESOLUTION_LOCK = RLock()
+_PROCEDURE_RESOLUTION_STATE = _ResolutionState()
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +329,12 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
     label: str
     description: str | None
     contract: type[ProcedureContract[Any]]
+    _resolved_class: type[Procedure[Any, Any, Any, Any]] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         _require_text(self.identifier, "procedure definition identifier")
@@ -347,6 +365,19 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 "procedure definition target must use 'module:attribute' syntax"
             )
 
+    def __reduce__(self) -> tuple[object, tuple[object, ...]]:
+        """Serialize public metadata while rebuilding local resolution state."""
+        return (
+            type(self),
+            (
+                self.identifier,
+                self.target,
+                self.label,
+                self.description,
+                self.contract,
+            ),
+        )
+
     @property
     def invocation_synopsis(self) -> str:
         """Return a direct-execution synopsis without resolving implementations."""
@@ -356,19 +387,89 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
 
     def resolve(self) -> type[ProcedureT]:
         """Import and return the procedure class described by this definition."""
+        if self._resolved_class is not None:
+            return cast(type[ProcedureT], self._resolved_class)
+        with _PROCEDURE_RESOLUTION_LOCK:
+            if self._resolved_class is not None:
+                return cast(type[ProcedureT], self._resolved_class)
+            if self.target in _PROCEDURE_RESOLUTION_STATE.targets:
+                raise RuntimeError(
+                    f"recursive procedure resolution for {self.identifier}"
+                )
+            _PROCEDURE_RESOLUTION_STATE.targets.add(self.target)
+            try:
+                resolved = self._import_target()
+                self._validate_resolved_class(resolved)
+                resolved_class = cast(type[Procedure[Any, Any, Any, Any]], resolved)
+                self._validate_resolved_definition(resolved_class)
+                self._validate_resolved_specialization(resolved_class)
+                object.__setattr__(self, "_resolved_class", resolved_class)
+                return cast(type[ProcedureT], resolved_class)
+            finally:
+                _PROCEDURE_RESOLUTION_STATE.targets.remove(self.target)
+
+    def _import_target(self) -> object:
         module_name, _, attribute_path = self.target.partition(":")
         resolved: object = import_module(module_name)
         for component in attribute_path.split("."):
             resolved = getattr(resolved, component)
+        return resolved
+
+    def _validate_resolved_class(self, resolved: object) -> None:
+        if not isinstance(resolved, type) or not issubclass(resolved, Procedure):
+            raise TypeError(
+                f"procedure definition {self.identifier} must resolve to a "
+                "Procedure class"
+            )
+
+    def _validate_resolved_definition(
+        self,
+        resolved: type[Procedure[Any, Any, Any, Any]],
+    ) -> None:
         resolved_definition = getattr(resolved, "definition", None)
+        if not isinstance(resolved_definition, ProcedureDefinition):
+            raise TypeError(
+                f"procedure {self.identifier} must declare a ProcedureDefinition"
+            )
+        definition = cast(ProcedureDefinition[Any], resolved_definition)
         if (
-            getattr(resolved_definition, "identifier", None) != self.identifier
-            or getattr(resolved_definition, "target", None) != self.target
+            definition.contract.metadata.digest != self.contract.metadata.digest
+            or definition.identifier != self.identifier
+            or definition.target != self.target
         ):
             raise ValueError(
-                "resolved procedure definition identifier and target do not match"
+                "resolved procedure definition identifier, target, and contract "
+                "must match"
             )
-        return cast(type[ProcedureT], resolved)
+
+    def _validate_resolved_specialization(
+        self,
+        resolved: type[Procedure[Any, Any, Any, Any]],
+    ) -> None:
+        specializations: set[tuple[type[object], ...]] = set()
+        for base in resolved.__mro__:
+            for generic_base in getattr(base, "__orig_bases__", ()):
+                if get_origin(generic_base) is Procedure:
+                    arguments = get_args(generic_base)
+                    if len(arguments) == 4 and all(
+                        isinstance(argument, type) for argument in arguments
+                    ):
+                        specializations.add(cast(tuple[type[object], ...], arguments))
+        configuration = cast(
+            type[ProcedureConfig] | None,
+            getattr(self.contract, "configuration"),
+        )
+        expected = (
+            type(None) if configuration is None else configuration,
+            self.contract.SetupInputs,
+            self.contract.Inputs,
+            self.contract.Outputs,
+        )
+        if specializations != {expected}:
+            raise TypeError(
+                f"procedure {self.identifier} generic specialization does not match "
+                "its contract"
+            )
 
 
 __all__ = [
