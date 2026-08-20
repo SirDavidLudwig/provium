@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from importlib import import_module
+from shlex import quote
 from typing import Any, ClassVar, Literal, cast, get_args, get_origin
 
 from .config import ProcedureConfig
@@ -169,6 +170,39 @@ def _compile_contract_metadata(
     )
 
 
+def _format_binding_argument(
+    flag: str,
+    field: ProcedureIOFieldMetadata,
+) -> str:
+    argument = f"{flag} {field.name}=PATH"
+    if field.repeated:
+        maximum = "unbounded" if field.maximum is None else str(field.maximum)
+        ellipsis = " ..." if field.maximum is None or field.maximum > 1 else ""
+        repeated_argument = f"{argument}{ellipsis}"
+        if not field.required:
+            repeated_argument = f"[{repeated_argument}]"
+        return f"{repeated_argument} ({field.minimum}..{maximum} bindings)"
+    return argument if field.required else f"[{argument}]"
+
+
+def _invocation_arguments(
+    metadata: ProcedureContractMetadata,
+) -> list[str]:
+    arguments = [
+        _format_binding_argument("--setup-input", field)
+        for field in metadata.setup_inputs
+    ]
+    arguments.extend(
+        _format_binding_argument("--input", field) for field in metadata.inputs
+    )
+    arguments.extend(
+        _format_binding_argument("--output", field) for field in metadata.outputs
+    )
+    if metadata.configuration_target is not None:
+        arguments.append("[--config FILE ...]")
+    return arguments
+
+
 class ProcedureContract[ConfigT: ProcedureConfig | None]:
     """Lightweight configuration and I/O contract for a procedure."""
 
@@ -290,11 +324,16 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
         _require_text(self.label, "procedure definition label")
         if self.description is not None:
             _require_text(self.description, "procedure definition description")
-        if not isinstance(self.contract, type) or not issubclass(
-            self.contract, ProcedureContract
+        if (
+            not isinstance(self.contract, type)
+            or not issubclass(self.contract, ProcedureContract)
+            or not isinstance(
+                getattr(self.contract, "metadata", None), ProcedureContractMetadata
+            )
         ):
             raise TypeError(
-                "procedure definition contract must be a ProcedureContract class"
+                "procedure definition contract must be a concrete compiled "
+                "ProcedureContract class"
             )
 
         module_name, separator, attribute_path = self.target.partition(":")
@@ -307,6 +346,13 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
             raise ValueError(
                 "procedure definition target must use 'module:attribute' syntax"
             )
+
+    @property
+    def invocation_synopsis(self) -> str:
+        """Return a direct-execution synopsis without resolving implementations."""
+        lines = [f"provium execute {quote(self.identifier)}"]
+        lines.extend(_invocation_arguments(self.contract.metadata))
+        return " \\\n  ".join(lines)
 
     def resolve(self) -> type[ProcedureT]:
         """Import and return the procedure class described by this definition."""

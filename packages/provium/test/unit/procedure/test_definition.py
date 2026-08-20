@@ -17,7 +17,9 @@ from provium import (
     ProcedureIOFieldMetadata,
     ProcedureOutputs,
     input,
+    optional_input,
     optional_output,
+    output,
     repeated_input,
 )
 
@@ -98,6 +100,119 @@ def test_procedure_definition_exposes_lightweight_metadata() -> None:
     assert EXAMPLE_DEFINITION.label == "Example"
     assert EXAMPLE_DEFINITION.description == "An example procedure."
     assert EXAMPLE_DEFINITION.contract is Contract
+
+
+def test_procedure_definition_builds_an_ordered_invocation_synopsis() -> None:
+    class SynopsisContract(ProcedureContract[Config]):
+        configuration = Config
+
+        class SetupInputs(ProcedureInputs):
+            model = input(EXAMPLE_ARTIFACT)
+
+        class Inputs(ProcedureInputs):
+            image = input(EXAMPLE_ARTIFACT)
+            images = repeated_input(EXAMPLE_ARTIFACT, minimum=1, maximum=4)
+
+        class Outputs(ProcedureOutputs):
+            result = optional_output(EXAMPLE_ARTIFACT)
+
+    definition = ProcedureDefinition(
+        "example.SynopsisV1",
+        "example.procedures:SynopsisProcedure",
+        "Synopsis",
+        None,
+        SynopsisContract,
+    )
+
+    assert definition.invocation_synopsis == (
+        "provium execute example.SynopsisV1 \\\n"
+        "  --setup-input model=PATH \\\n"
+        "  --input image=PATH \\\n"
+        "  --input images=PATH ... (1..4 bindings) \\\n"
+        "  [--output result=PATH] \\\n"
+        "  [--config FILE ...]"
+    )
+
+
+def test_unconfigured_empty_contract_has_a_minimal_invocation_synopsis() -> None:
+    class EmptyContract(ProcedureContract[None]):
+        configuration = None
+
+    definition = ProcedureDefinition(
+        "example.EmptyV1",
+        "example.procedures:EmptyProcedure",
+        "Empty",
+        None,
+        EmptyContract,
+    )
+
+    assert definition.invocation_synopsis == "provium execute example.EmptyV1"
+
+
+def test_invocation_synopsis_quotes_the_procedure_identifier() -> None:
+    class EmptyContract(ProcedureContract[None]):
+        configuration = None
+
+    definition = ProcedureDefinition(
+        "example procedure; echo unsafe",
+        "example.procedures:ExampleProcedure",
+        "Example",
+        None,
+        EmptyContract,
+    )
+
+    assert definition.invocation_synopsis == (
+        "provium execute 'example procedure; echo unsafe'"
+    )
+
+
+def test_optional_and_unbounded_inputs_are_shown_in_the_synopsis() -> None:
+    class SynopsisContract(ProcedureContract[None]):
+        configuration = None
+
+        class SetupInputs(ProcedureInputs):
+            model = optional_input(EXAMPLE_ARTIFACT)
+
+        class Inputs(ProcedureInputs):
+            images = repeated_input(EXAMPLE_ARTIFACT)
+
+        class Outputs(ProcedureOutputs):
+            result = output(EXAMPLE_ARTIFACT)
+
+    definition = ProcedureDefinition(
+        "example.OptionalV1",
+        "example.procedures:OptionalProcedure",
+        "Optional",
+        None,
+        SynopsisContract,
+    )
+
+    assert definition.invocation_synopsis == (
+        "provium execute example.OptionalV1 \\\n"
+        "  [--setup-input model=PATH] \\\n"
+        "  [--input images=PATH ...] (0..unbounded bindings) \\\n"
+        "  --output result=PATH"
+    )
+
+
+def test_single_binding_repeated_input_does_not_show_an_ellipsis() -> None:
+    class SynopsisContract(ProcedureContract[None]):
+        configuration = None
+
+        class Inputs(ProcedureInputs):
+            value = repeated_input(EXAMPLE_ARTIFACT, minimum=1, maximum=1)
+
+    definition = ProcedureDefinition(
+        "example.SingleV1",
+        "example.procedures:SingleProcedure",
+        "Single",
+        None,
+        SynopsisContract,
+    )
+
+    assert definition.invocation_synopsis == (
+        "provium execute example.SingleV1 \\\n  --input value=PATH (1..1 bindings)"
+    )
 
 
 def test_procedure_definition_description_is_optional() -> None:
@@ -312,6 +427,17 @@ def test_procedure_definition_requires_a_contract_class(contract: object) -> Non
             "Example",
             None,
             contract,  # type: ignore[arg-type]
+        )
+
+
+def test_procedure_definition_requires_compiled_contract_metadata() -> None:
+    with pytest.raises(TypeError, match="concrete compiled ProcedureContract"):
+        ProcedureDefinition(
+            "example.ExampleV1",
+            "example.procedures:ExampleProcedure",
+            "Example",
+            None,
+            ProcedureContract,
         )
 
 
