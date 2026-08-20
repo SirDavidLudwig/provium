@@ -32,7 +32,7 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
     reader: type[ReaderT]
     writer: type[WriterT]
     dump: Callable[[ReaderT, Path], None] | None = None
-    load: Callable[[Path, WriterT], None] | None = None
+    load: Callable[[WriterT, Path], None] | None = None
 
     @classmethod
     def bind_read(cls, path: str | PathLike[str]) -> ArtifactReadBinding[ReaderT]:

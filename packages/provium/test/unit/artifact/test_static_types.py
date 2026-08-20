@@ -22,7 +22,7 @@ def test_artifact_metadata_retains_its_generic_reader_and_writer_types() -> None
     assert annotations["reader"] == type[reader_type]
     assert annotations["writer"] == type[writer_type]
     assert annotations["dump"] == Callable[[reader_type, Path], None] | None
-    assert annotations["load"] == Callable[[Path, writer_type], None] | None
+    assert annotations["load"] == Callable[[writer_type, Path], None] | None
 
     read_annotations = get_type_hints(
         Artifact.bind_read,

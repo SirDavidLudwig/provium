@@ -48,7 +48,7 @@ def test_artifact_can_define_custom_dump_and_load_class_methods() -> None:
             calls.append(("dump", reader, destination))
 
         @classmethod
-        def load(cls, source: Path, writer: Writer) -> None:
+        def load(cls, writer: Writer, source: Path) -> None:
             calls.append(("load", writer, source))
 
     # Transfer callbacks only require correctly typed instances; construction and
@@ -57,7 +57,7 @@ def test_artifact_can_define_custom_dump_and_load_class_methods() -> None:
     writer = object.__new__(Writer)
 
     TransferArtifact.dump(reader, Path("dump"))
-    TransferArtifact.load(Path("dump"), writer)
+    TransferArtifact.load(writer, Path("dump"))
 
     assert calls == [
         ("dump", reader, Path("dump")),

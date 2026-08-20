@@ -82,7 +82,7 @@ class ArtifactCommand(Command):
         )
         with procedure.execute(outputs={"artifact": binding}):
             with binding.open() as writer:
-                handler(arguments.source, writer)
+                handler(writer, arguments.source)
 
 
 __all__ = ["ArtifactCommand"]

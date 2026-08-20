@@ -88,7 +88,7 @@ def test_artifact_load_uses_an_internal_imperative_procedure(
     destination = tmp_path / "loaded.provium"
     events: list[object] = []
     monkeypatch.setattr(
-        TransferArtifact, "load", lambda path, writer: events.append((path, writer))
+        TransferArtifact, "load", lambda writer, path: events.append((writer, path))
     )
     monkeypatch.setattr(
         "provium.cli.commands.artifact.ImperativeProcedure", _ImperativeProcedure
@@ -105,7 +105,7 @@ def test_artifact_load_uses_an_internal_imperative_procedure(
     )
     assert _ImperativeProcedure.arguments[0] == "provium.builtin.LoadArtifactV1"
     assert _ImperativeProcedure.outputs == {"artifact": _WriteBinding(destination)}
-    assert events == [(source, _ImperativeProcedure.writer)]
+    assert events == [(_ImperativeProcedure.writer, source)]
     assert ProcedureCatalog().definitions == {}
 
 
