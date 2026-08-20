@@ -17,6 +17,7 @@ from provium import (
     ArtifactReference,
     ArtifactWriter,
     CancellationToken,
+    ImperativeProcedure,
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
@@ -34,6 +35,7 @@ from provium import (
     optional_input,
     output,
     repeated_input,
+    session,
 )
 
 
@@ -672,3 +674,143 @@ def test_executor_runs_complete_typed_artifact_invocation(
         header = decode_header(data)
         assert data[header.body_offset :] == expected_body
         assert header.lineage == result.lineage
+
+
+def test_imperative_procedure_reads_and_writes_with_provenance(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pa"
+    source_record = write_artifact(source, "source", b"source body")
+    destination = tmp_path / "destination.pa"
+    input_binding = BytesArtifact.bind_read(source)
+    output_binding = BytesArtifact.bind_write(destination)
+    procedure = ImperativeProcedure("example.ImperativeV1", "contract-digest")
+
+    with procedure.execute(
+        inputs=(input_binding,),
+        outputs={"result": output_binding},
+    ) as execution:
+        with input_binding.open() as reader:
+            output_binding.open().write(reader.read().upper())
+
+    result = execution.result
+    assert result is not None
+    assert result.procedure == ProcedureRecord(
+        "example.ImperativeV1", "contract-digest"
+    )
+    assert result.inputs == (source_record.reference,)
+    assert result.outputs["result"].artifact_identifier == BYTES.identifier
+    with session():
+        with BytesArtifact.bind_read(destination).open() as reader:
+            assert reader.read() == b"SOURCE BODY"
+
+
+def test_imperative_read_only_execution_returns_a_result(tmp_path: Path) -> None:
+    source = tmp_path / "source.pa"
+    source_record = write_artifact(source, "source", b"source body")
+    binding = BytesArtifact.bind_read(source)
+
+    with ImperativeProcedure("example.ReadV1", "digest").execute(
+        inputs=(binding,)
+    ) as execution:
+        with binding.open() as reader:
+            assert reader.read() == b"source body"
+
+    assert execution.result is not None
+    assert execution.result.inputs == (source_record.reference,)
+    assert execution.result.outputs == {}
+
+
+def test_imperative_failure_does_not_publish_outputs(tmp_path: Path) -> None:
+    destination = tmp_path / "destination.pa"
+    destination.write_bytes(b"original")
+    binding = BytesArtifact.bind_write(destination)
+
+    with pytest.raises(ValueError, match="failed"):
+        with ImperativeProcedure("example.FailV1", "digest").execute(
+            outputs={"result": binding}
+        ):
+            binding.open().write(b"replacement")
+            raise ValueError("failed")
+
+    assert destination.read_bytes() == b"original"
+
+
+def test_imperative_read_only_failure_has_no_result() -> None:
+    execution = ImperativeProcedure("example.FailV1", "digest").execute()
+
+    with pytest.raises(ValueError, match="failed"):
+        with execution:
+            raise ValueError("failed")
+
+    assert execution.result is None
+
+
+def test_imperative_execution_is_single_use_and_requires_entry() -> None:
+    execution = ImperativeProcedure("example.OnceV1", "digest").execute()
+
+    with pytest.raises(RuntimeError, match="not active"):
+        execution.__exit__(None, None, None)
+
+    with execution:
+        pass
+
+    with pytest.raises(RuntimeError, match="not active"):
+        execution.__exit__(None, None, None)
+
+    with pytest.raises(RuntimeError, match="already been entered"):
+        execution.__enter__()
+
+
+def test_imperative_enter_failure_cleans_up_its_sessions(tmp_path: Path) -> None:
+    missing = BytesArtifact.bind_read(tmp_path / "missing.pa")
+    execution = ImperativeProcedure("example.MissingV1", "digest").execute(
+        inputs=(missing,)
+    )
+
+    with pytest.raises(FileNotFoundError):
+        execution.__enter__()
+
+    with session() as active:
+        assert active.active
+
+
+def test_imperative_output_staging_failure_cleans_up(tmp_path: Path) -> None:
+    destination = tmp_path / "same.pa"
+    execution = ImperativeProcedure("example.DuplicateV1", "digest").execute(
+        outputs={
+            "first": BytesArtifact.bind_write(destination),
+            "second": BytesArtifact.bind_write(destination),
+        }
+    )
+
+    with pytest.raises(ValueError, match="destination is already in use"):
+        execution.__enter__()
+
+    assert not destination.exists()
+
+
+def test_imperative_rejects_invalid_output_name_before_publication(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "destination.pa"
+    destination.write_bytes(b"original")
+    binding = BytesArtifact.bind_write(destination)
+
+    with pytest.raises(ValueError, match="output names must be nonempty"):
+        ImperativeProcedure("example.InvalidV1", "digest").execute(
+            outputs={"": binding}
+        )
+
+    assert destination.read_bytes() == b"original"
+
+
+def test_imperative_validates_binding_collections() -> None:
+    procedure = ImperativeProcedure("example.InvalidV1", "digest")
+
+    with pytest.raises(TypeError, match="inputs must contain read bindings"):
+        procedure.execute(inputs=(object(),))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="outputs must contain write bindings"):
+        procedure.execute(outputs={"result": object()})  # type: ignore[dict-item]
+    with pytest.raises(TypeError, match="output names must be strings"):
+        procedure.execute(outputs={1: object()})  # type: ignore[dict-item]

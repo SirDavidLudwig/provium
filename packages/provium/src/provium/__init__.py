@@ -22,6 +22,8 @@ from .artifact import (
 from .procedure import (
     CancellationToken,
     ConfigurationSnapshot,
+    ImperativeProcedure,
+    ImperativeProcedureExecution,
     JsonValue,
     PreparedProcedure,
     Procedure,
@@ -84,6 +86,8 @@ __all__ = [
     "StagedArtifact",
     "ArtifactWriteBinding",
     "ConfigurationSnapshot",
+    "ImperativeProcedure",
+    "ImperativeProcedureExecution",
     "CancellationToken",
     "JsonValue",
     "PreparedProcedure",

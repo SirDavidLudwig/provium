@@ -25,6 +25,7 @@ from .definition import (
 from .discovery import discover_procedure_catalogs, reset_procedure_discovery
 from .execution import ProcedureExecutionSession
 from .executor import ProcedureExecutor
+from .imperative import ImperativeProcedure, ImperativeProcedureExecution
 from .io import (
     ProcedureInputField,
     ProcedureInputs,
@@ -51,6 +52,8 @@ __all__ = [
     "ConfigurationSnapshot",
     "CancellationToken",
     "JsonValue",
+    "ImperativeProcedure",
+    "ImperativeProcedureExecution",
     "PreparedProcedure",
     "Procedure",
     "ProcedureCatalog",
