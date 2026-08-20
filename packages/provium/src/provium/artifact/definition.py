@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
-from typing import ClassVar
+from pathlib import Path
+from typing import ClassVar, cast
+
+from .reader import ArtifactReader
+from .writer import ArtifactWriter
 
 
 def _require_text(value: object, field_name: str) -> None:
@@ -43,30 +48,30 @@ class ArtifactDefinition:
             )
 
     def resolve(self) -> type[Artifact]:
-        """Import and validate the artifact class described by this definition."""
+        """Import and return the artifact class described by this definition."""
         module_name, _, attribute_path = self.target.partition(":")
         resolved: object = import_module(module_name)
         for component in attribute_path.split("."):
             resolved = getattr(resolved, component)
-
-        if not isinstance(resolved, type) or not issubclass(resolved, Artifact):
-            raise TypeError(
-                "artifact definition target must resolve to an Artifact class"
-            )
         resolved_definition = getattr(resolved, "definition", None)
-        if not isinstance(resolved_definition, ArtifactDefinition):
-            raise TypeError(
-                "resolved Artifact class definition must be an ArtifactDefinition"
+        if (
+            getattr(resolved_definition, "identifier", None) != self.identifier
+            or getattr(resolved_definition, "target", None) != self.target
+        ):
+            raise ValueError(
+                "resolved artifact definition identifier and target do not match"
             )
-        if resolved_definition != self:
-            raise ValueError("resolved artifact definition does not match its target")
-        return resolved
+        return cast(type[Artifact], resolved)
 
 
-class Artifact[ReaderT, WriterT]:
+class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
     """An artifact implementation with specialized reader and writer types."""
 
     definition: ClassVar[ArtifactDefinition]
+    reader: type[ReaderT]
+    writer: type[WriterT]
+    dump: Callable[[ReaderT, Path], None] | None = None
+    load: Callable[[Path, WriterT], None] | None = None
 
 
 __all__ = ["Artifact", "ArtifactDefinition"]

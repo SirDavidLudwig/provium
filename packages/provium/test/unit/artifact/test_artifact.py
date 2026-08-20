@@ -1,15 +1,16 @@
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 
-from provium import Artifact, ArtifactDefinition
+from provium import Artifact, ArtifactDefinition, ArtifactReader, ArtifactWriter
 
 
-class Reader:
+class Reader(ArtifactReader):
     pass
 
 
-class Writer:
+class Writer(ArtifactWriter):
     pass
 
 
@@ -22,11 +23,44 @@ EXAMPLE_DEFINITION = ArtifactDefinition(
 
 class ExampleArtifact(Artifact[Reader, Writer]):
     definition = EXAMPLE_DEFINITION
+    reader = Reader
+    writer = Writer
 
 
 def test_artifacts_are_defined_as_specialized_classes() -> None:
     assert issubclass(ExampleArtifact, Artifact)
     assert ExampleArtifact.definition is EXAMPLE_DEFINITION
+    assert ExampleArtifact.reader is Reader
+    assert ExampleArtifact.writer is Writer
+
+
+def test_artifact_custom_transfers_are_optional() -> None:
+    assert ExampleArtifact.dump is None
+    assert ExampleArtifact.load is None
+
+
+def test_artifact_can_define_custom_dump_and_load_class_methods() -> None:
+    calls: list[tuple[str, object, Path]] = []
+
+    class TransferArtifact(ExampleArtifact):
+        @classmethod
+        def dump(cls, reader: Reader, destination: Path) -> None:
+            calls.append(("dump", reader, destination))
+
+        @classmethod
+        def load(cls, source: Path, writer: Writer) -> None:
+            calls.append(("load", writer, source))
+
+    reader = Reader()
+    writer = Writer()
+
+    TransferArtifact.dump(reader, Path("dump"))
+    TransferArtifact.load(Path("dump"), writer)
+
+    assert calls == [
+        ("dump", reader, Path("dump")),
+        ("load", writer, Path("dump")),
+    ]
 
 
 def test_artifact_definition_describes_a_lazy_artifact_target() -> None:

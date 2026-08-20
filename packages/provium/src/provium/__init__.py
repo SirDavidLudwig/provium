@@ -6,6 +6,8 @@ from .artifact import (
     Artifact,
     ArtifactCatalog,
     ArtifactDefinition,
+    ArtifactReader,
+    ArtifactWriter,
     discover_artifact_catalogs,
     reset_artifact_discovery,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "Artifact",
     "ArtifactCatalog",
     "ArtifactDefinition",
+    "ArtifactReader",
+    "ArtifactWriter",
     "__version__",
     "discover_artifact_catalogs",
     "reset_artifact_discovery",

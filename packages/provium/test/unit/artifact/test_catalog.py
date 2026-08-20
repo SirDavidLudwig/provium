@@ -4,7 +4,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from provium import Artifact, ArtifactCatalog, ArtifactDefinition
+from provium import (
+    Artifact,
+    ArtifactCatalog,
+    ArtifactDefinition,
+    ArtifactReader,
+    ArtifactWriter,
+)
+
+
+class Reader(ArtifactReader):
+    pass
+
+
+class Writer(ArtifactWriter):
+    pass
+
 
 INTEGER_DEFINITION = ArtifactDefinition(
     "example.IntegerV1",
@@ -13,8 +28,10 @@ INTEGER_DEFINITION = ArtifactDefinition(
 )
 
 
-class IntegerArtifact(Artifact[object, object]):
+class IntegerArtifact(Artifact[Reader, Writer]):
     definition = INTEGER_DEFINITION
+    reader = Reader
+    writer = Writer
 
 
 def test_catalog_registers_definitions_without_resolving_them() -> None:
@@ -73,53 +90,60 @@ def test_definition_lazily_resolves_an_artifact_class(
     assert imports == ["example.artifacts"]
 
 
-def test_definition_rejects_a_target_that_is_not_an_artifact_class(
+def test_definition_returns_its_target_without_runtime_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "provium.artifact.definition.import_module",
-        lambda name: SimpleNamespace(value=object()),
-    )
     definition = ArtifactDefinition(
         "example.IntegerV1", "example.artifacts:value", "An integer artifact."
     )
-
-    with pytest.raises(TypeError, match="Artifact class"):
-        definition.resolve()
-
-
-def test_definition_rejects_an_artifact_with_a_different_definition(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    target = SimpleNamespace(definition=definition)
     monkeypatch.setattr(
         "provium.artifact.definition.import_module",
-        lambda name: SimpleNamespace(value=IntegerArtifact),
-    )
-    definition = ArtifactDefinition(
-        "example.OtherV1", "example.artifacts:value", "Another artifact."
+        lambda name: SimpleNamespace(value=target),
     )
 
-    with pytest.raises(ValueError, match="definition does not match"):
-        definition.resolve()
+    assert definition.resolve() is target
 
 
-def test_definition_rejects_an_artifact_without_an_artifact_definition(
+def test_definition_accepts_a_distinct_definition_with_the_same_identity_and_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class AlwaysEqual:
-        def __eq__(self, other: object) -> bool:
-            return True
-
-    class InvalidArtifact(Artifact[object, object]):
-        definition = AlwaysEqual()  # type: ignore[assignment]
-
+    definition = ArtifactDefinition(
+        "example.IntegerV1", "example.artifacts:value", "An integer artifact."
+    )
+    compatible_definition = ArtifactDefinition(
+        "example.IntegerV1", "example.artifacts:value", "Updated documentation."
+    )
+    target = SimpleNamespace(definition=compatible_definition)
     monkeypatch.setattr(
         "provium.artifact.definition.import_module",
-        lambda name: SimpleNamespace(value=InvalidArtifact),
-    )
-    definition = ArtifactDefinition(
-        "example.InvalidV1", "example.artifacts:value", "An invalid artifact."
+        lambda name: SimpleNamespace(value=target),
     )
 
-    with pytest.raises(TypeError, match="ArtifactDefinition"):
+    assert definition.resolve() is target
+
+
+@pytest.mark.parametrize(
+    ("identifier", "target"),
+    [
+        ("example.OtherV1", "example.artifacts:value"),
+        ("example.IntegerV1", "example.artifacts:other"),
+    ],
+)
+def test_definition_rejects_a_target_with_different_resolution_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    identifier: str,
+    target: str,
+) -> None:
+    definition = ArtifactDefinition(
+        "example.IntegerV1", "example.artifacts:value", "An integer artifact."
+    )
+    resolved_definition = ArtifactDefinition(identifier, target, "An artifact.")
+    resolved_target = SimpleNamespace(definition=resolved_definition)
+    monkeypatch.setattr(
+        "provium.artifact.definition.import_module",
+        lambda name: SimpleNamespace(value=resolved_target),
+    )
+
+    with pytest.raises(ValueError, match="identifier and target"):
         definition.resolve()
