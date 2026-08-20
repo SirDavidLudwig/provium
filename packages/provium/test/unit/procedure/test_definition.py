@@ -4,6 +4,7 @@ import pytest
 
 from provium import (
     Procedure,
+    ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
     ProcedureInputs,
@@ -11,7 +12,11 @@ from provium import (
 )
 
 
-class Config:
+class Config(ProcedureConfig):
+    pass
+
+
+class OtherConfig(ProcedureConfig):
     pass
 
 
@@ -70,6 +75,50 @@ def test_procedure_definition_description_is_optional() -> None:
     )
 
     assert definition.description is None
+
+
+@pytest.mark.parametrize(
+    ("attribute", "value", "message"),
+    [
+        ("configuration", object, "ProcedureConfig class or None"),
+        ("configuration", Config(), "ProcedureConfig class or None"),
+        ("SetupInputs", Outputs, "ProcedureInputs class"),
+        ("Inputs", Outputs, "ProcedureInputs class"),
+        ("Outputs", Inputs, "ProcedureOutputs class"),
+    ],
+)
+def test_procedure_contract_validates_runtime_declarations(
+    attribute: str, value: object, message: str
+) -> None:
+    with pytest.raises(TypeError, match=message):
+        type(
+            "InvalidContract",
+            (ProcedureContract,),
+            {attribute: value},
+        )
+
+
+def test_procedure_contract_configuration_matches_generic_specialization() -> None:
+    with pytest.raises(TypeError, match="configuration does not match"):
+
+        class InvalidContract(ProcedureContract[Config]):
+            configuration = OtherConfig
+
+
+def test_unconfigured_procedure_contract_uses_none_specialization() -> None:
+    class NoConfigContract(ProcedureContract[None]):
+        configuration = None
+
+    assert NoConfigContract.configuration is None
+
+
+def test_procedure_contract_requires_a_concrete_generic_specialization() -> None:
+    with pytest.raises(TypeError, match="exactly one generic specialization"):
+
+        class UnspecializedContract[ConfigT: ProcedureConfig](
+            ProcedureContract[ConfigT]
+        ):
+            configuration = Config
 
 
 @pytest.mark.parametrize("field", ["identifier", "target", "label"])

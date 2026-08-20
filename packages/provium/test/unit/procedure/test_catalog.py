@@ -3,7 +3,7 @@ import pytest
 from provium import ProcedureCatalog, ProcedureContract, ProcedureDefinition
 
 
-class Contract(ProcedureContract[object]):
+class Contract(ProcedureContract[None]):
     pass
 
 

@@ -10,6 +10,7 @@ from provium import (
     ArtifactReader,
     ArtifactWriter,
     Procedure,
+    ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
     ProcedureInputs,
@@ -56,7 +57,11 @@ OTHER_ARTIFACT: ArtifactDefinition[OtherArtifact] = ArtifactDefinition(
 wrong_artifact_definition: ArtifactDefinition[ExampleArtifact] = OTHER_ARTIFACT  # pyright: ignore[reportAssignmentType]
 
 
-class Config:
+class Config(ProcedureConfig):
+    pass
+
+
+class OtherConfig(ProcedureConfig):
     pass
 
 
@@ -76,12 +81,27 @@ class Contract(ProcedureContract[Config]):
     pass
 
 
+class WrongConfigContract(ProcedureContract[Config]):
+    configuration = OtherConfig  # pyright: ignore[reportAssignmentType]
+
+
 class ExampleProcedure(Procedure[Config, SetupInputs, Inputs, Outputs]):
     definition: ClassVar[ProcedureDefinition[ExampleProcedure]]
 
 
 class OtherProcedure(Procedure[Config, SetupInputs, Inputs, Outputs]):
     definition: ClassVar[ProcedureDefinition[OtherProcedure]]
+
+
+class WrongIOProcedure(
+    Procedure[
+        Config,
+        Outputs,  # pyright: ignore[reportInvalidTypeArguments]
+        Inputs,
+        Outputs,
+    ]
+):
+    pass
 
 
 OTHER_PROCEDURE: ProcedureDefinition[OtherProcedure] = ProcedureDefinition(

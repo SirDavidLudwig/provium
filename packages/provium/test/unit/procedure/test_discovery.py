@@ -11,7 +11,7 @@ from provium import (
 )
 
 
-class Contract(ProcedureContract[object]):
+class Contract(ProcedureContract[None]):
     pass
 
 

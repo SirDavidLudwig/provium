@@ -19,6 +19,8 @@ from provium import (
     ProcedureDefinition,
     ProcedureInputs,
     ProcedureOutputs,
+    input,
+    output,
     validate_procedure_configuration,
 )
 
@@ -70,10 +72,17 @@ class Contract(ProcedureContract[Config]):
         pass
 
     class Inputs(ProcedureInputs):
-        pass
+        image = input(IMAGE_ARTIFACT)
 
     class Outputs(ProcedureOutputs):
-        pass
+        image = output(IMAGE_ARTIFACT)
+
+
+def check_procedure_io_types(
+    inputs: Contract.Inputs, outputs: Contract.Outputs
+) -> None:
+    assert_type(inputs.image, ArtifactReadBinding[ImageReader])
+    assert_type(outputs.image, ArtifactWriteBinding[ImageWriter])
 
 
 class DetectProcedure(
