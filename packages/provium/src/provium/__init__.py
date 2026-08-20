@@ -59,6 +59,7 @@ from .provenance import (
     ProcedureExecutionRecord,
     ProcedureRecord,
 )
+from .session import Session, current_session, session
 
 __version__ = version("provium")
 
@@ -99,8 +100,10 @@ __all__ = [
     "ProcedureRepeatedInputField",
     "ProcedureRecord",
     "ProcedureSetupContext",
+    "Session",
     "__version__",
     "compose_configuration",
+    "current_session",
     "decode_header",
     "discover_artifact_catalogs",
     "discover_procedure_catalogs",
@@ -114,5 +117,6 @@ __all__ = [
     "repeated_input",
     "reset_artifact_discovery",
     "reset_procedure_discovery",
+    "session",
     "validate_procedure_configuration",
 ]
