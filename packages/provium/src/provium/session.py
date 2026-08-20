@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import struct
 from contextlib import AbstractContextManager
+from pathlib import Path
 from types import TracebackType
-from typing import Protocol, Self
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, Self, cast
 
+from .artifact.header import (
+    CONTAINER_VERSION,
+    MAGIC,
+    PREFIX_SIZE,
+    ArtifactHeader,
+    decode_header,
+)
+from .artifact.reader import ArtifactReader
+from .artifact.region import BodyRegion
 from .context import activate_context, current_context
+from .provenance import ArtifactLineage, ArtifactRecord, ArtifactReference
+
+if TYPE_CHECKING:
+    from .artifact.binding import ArtifactReadBinding
 
 
 class _Closeable(Protocol):
@@ -22,6 +39,9 @@ class Session:
         self._used = False
         self._activation: AbstractContextManager[None] | None = None
         self._managed_resources: list[_Closeable] = []
+        self._readers: list[ArtifactReader] = []
+        self._inputs: dict[str, ArtifactRecord] = {}
+        self._input_lineage = ArtifactLineage()
 
     def __enter__(self) -> Self:
         if self._used:
@@ -63,6 +83,116 @@ class Session:
         if not callable(getattr(resource, "close", None)):
             raise TypeError("managed resource must provide a callable close operation")
         self._managed_resources.append(resource)
+
+    @property
+    def readers(self) -> tuple[ArtifactReader, ...]:
+        """Return every reader opened directly by this session."""
+        return tuple(self._readers)
+
+    @property
+    def inputs(self) -> tuple[ArtifactRecord, ...]:
+        """Return unique semantic artifact inputs in opening order."""
+        inherited = (
+            {}
+            if self.parent is None
+            else {record.reference.identity: record for record in self.parent.inputs}
+        )
+        inherited.update(self._inputs)
+        return tuple(inherited.values())
+
+    @property
+    def input_lineage(self) -> ArtifactLineage:
+        """Return the merged lineage of every opened artifact."""
+        if self.parent is None:
+            return self._input_lineage
+        return self.parent.input_lineage.merge(self._input_lineage)
+
+    def open_artifact(self, binding: ArtifactReadBinding[Any]) -> ArtifactReader:
+        """Open and verify one typed artifact binding."""
+        if not self.active or current_context() is not self:
+            raise RuntimeError("artifact opening requires the active session")
+        stream = Path(binding.path).open("rb")
+        try:
+            header, file_length = self._read_header(stream)
+            expected_identifier = binding.artifact.definition.identifier
+            self._validate_opened_header(header, file_length, expected_identifier)
+            self._verify_digest(
+                stream, header.body_offset, header.body_length, header.body_digest
+            )
+            reference = ArtifactReference(
+                header.artifact_identity,
+                header.artifact_identifier,
+            )
+            record = header.lineage.artifact(reference)
+            merged_lineage = self._input_lineage.merge(header.lineage)
+            region = BodyRegion(
+                stream,
+                header.body_offset,
+                header.body_length,
+                self,
+                close_stream=True,
+            )
+            reader_type = cast(
+                type[ArtifactReader],
+                getattr(binding.artifact, "reader"),
+            )
+            reader = reader_type(region, header)
+        except BaseException:
+            stream.close()
+            raise
+        self._manage(reader)
+        self._readers.append(reader)
+        self._inputs.setdefault(record.reference.identity, record)
+        self._input_lineage = merged_lineage
+        return reader
+
+    @staticmethod
+    def _read_header(stream: BinaryIO) -> tuple[ArtifactHeader, int]:
+        prefix = stream.read(PREFIX_SIZE)
+        if len(prefix) < PREFIX_SIZE:
+            raise ValueError("truncated fixed header")
+        magic, version, metadata_offset, metadata_length, _, _ = struct.unpack(
+            ">8sHQQQQ", prefix
+        )
+        if magic != MAGIC:
+            raise ValueError("invalid artifact magic bytes")
+        if version != CONTAINER_VERSION:
+            raise ValueError(f"unsupported container version: {version}")
+        metadata_end = metadata_offset + metadata_length
+        stream.seek(0)
+        header = decode_header(stream.read(metadata_end))
+        stream.seek(0, io.SEEK_END)
+        return header, stream.tell()
+
+    @staticmethod
+    def _validate_opened_header(
+        header: ArtifactHeader,
+        file_length: int,
+        expected_identifier: str,
+    ) -> None:
+        if header.artifact_identifier != expected_identifier:
+            raise TypeError("artifact does not match the requested artifact type")
+        if header.body_offset + header.body_length > file_length:
+            raise ValueError("artifact body is truncated")
+
+    @staticmethod
+    def _verify_digest(
+        stream: BinaryIO,
+        body_offset: int,
+        body_length: int,
+        expected_digest: str,
+    ) -> None:
+        digest = hashlib.sha256()
+        stream.seek(body_offset)
+        remaining = body_length
+        while remaining:
+            chunk = stream.read(min(1024 * 1024, remaining))
+            if not chunk:
+                raise ValueError("artifact body is truncated during checksum")
+            digest.update(chunk)
+            remaining -= len(chunk)
+        if digest.hexdigest() != expected_digest:
+            raise ValueError("artifact body digest does not match")
 
     def _owns_active_context(self) -> bool:
         """Return whether this session owns the current nested session."""

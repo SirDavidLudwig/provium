@@ -84,6 +84,15 @@ class ArtifactReadBinding[ReaderT: ArtifactReader]:
         normalized = _validate_binding(self.artifact, self.path)
         object.__setattr__(self, "path", normalized)
 
+    def open(self) -> ReaderT:
+        """Open this artifact within the active resource session."""
+        from provium.session import current_session
+
+        active = current_session()
+        if active is None:
+            raise RuntimeError("artifact opening requires an active session")
+        return cast(ReaderT, active.open_artifact(self))
+
 
 @dataclass(frozen=True, slots=True)
 class ArtifactWriteBinding[WriterT: ArtifactWriter]:
