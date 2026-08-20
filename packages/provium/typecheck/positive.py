@@ -20,7 +20,10 @@ from provium import (
     ProcedureInputs,
     ProcedureOutputs,
     input,
+    optional_input,
+    optional_output,
     output,
+    repeated_input,
     validate_procedure_configuration,
 )
 
@@ -73,16 +76,22 @@ class Contract(ProcedureContract[Config]):
 
     class Inputs(ProcedureInputs):
         image = input(IMAGE_ARTIFACT)
+        previous = optional_input(IMAGE_ARTIFACT)
+        images = repeated_input(IMAGE_ARTIFACT, minimum=1)
 
     class Outputs(ProcedureOutputs):
         image = output(IMAGE_ARTIFACT)
+        preview = optional_output(IMAGE_ARTIFACT)
 
 
 def check_procedure_io_types(
     inputs: Contract.Inputs, outputs: Contract.Outputs
 ) -> None:
     assert_type(inputs.image, ArtifactReadBinding[ImageReader])
+    assert_type(inputs.previous, ArtifactReadBinding[ImageReader] | None)
+    assert_type(inputs.images, tuple[ArtifactReadBinding[ImageReader], ...])
     assert_type(outputs.image, ArtifactWriteBinding[ImageWriter])
+    assert_type(outputs.preview, ArtifactWriteBinding[ImageWriter] | None)
 
 
 class DetectProcedure(

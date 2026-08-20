@@ -7,10 +7,19 @@ from provium import (
     ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
+    ProcedureInputField,
     ProcedureInputs,
+    ProcedureIOField,
+    ProcedureOptionalInputField,
+    ProcedureOptionalOutputField,
+    ProcedureOutputField,
     ProcedureOutputs,
+    ProcedureRepeatedInputField,
     input,
+    optional_input,
+    optional_output,
     output,
+    repeated_input,
 )
 
 
@@ -69,6 +78,107 @@ def test_required_output_exposes_ordered_metadata() -> None:
     assert Outputs.result.maximum == 1
     assert Outputs.result.required is True
     assert Outputs.result.description == "The result."
+
+
+def test_optional_input_exposes_optional_metadata() -> None:
+    class Inputs(ProcedureInputs):
+        previous = optional_input(EXAMPLE_ARTIFACT, description="A previous value.")
+
+    assert Inputs.fields["previous"] is Inputs.previous
+    assert Inputs.previous.artifact is EXAMPLE_ARTIFACT
+    assert Inputs.previous.direction == "input"
+    assert Inputs.previous.minimum == 0
+    assert Inputs.previous.maximum == 1
+    assert Inputs.previous.required is False
+    assert Inputs.previous.description == "A previous value."
+
+
+def test_optional_output_exposes_optional_metadata() -> None:
+    class Outputs(ProcedureOutputs):
+        preview = optional_output(EXAMPLE_ARTIFACT)
+
+    assert Outputs.fields["preview"] is Outputs.preview
+    assert Outputs.preview.artifact is EXAMPLE_ARTIFACT
+    assert Outputs.preview.direction == "output"
+    assert Outputs.preview.minimum == 0
+    assert Outputs.preview.maximum == 1
+    assert Outputs.preview.required is False
+    assert Outputs.preview.description is None
+
+
+def test_optional_instance_access_is_not_constructed_yet() -> None:
+    class Inputs(ProcedureInputs):
+        value = optional_input(EXAMPLE_ARTIFACT)
+
+    class Outputs(ProcedureOutputs):
+        value = optional_output(EXAMPLE_ARTIFACT)
+
+    with pytest.raises(AttributeError, match="input values are not constructed yet"):
+        Inputs().value
+    with pytest.raises(AttributeError, match="output values are not constructed yet"):
+        Outputs().value
+
+
+def test_repeated_input_exposes_unbounded_metadata_by_default() -> None:
+    class Inputs(ProcedureInputs):
+        values = repeated_input(EXAMPLE_ARTIFACT)
+
+    assert Inputs.fields["values"] is Inputs.values
+    assert Inputs.values.artifact is EXAMPLE_ARTIFACT
+    assert Inputs.values.direction == "input"
+    assert Inputs.values.minimum == 0
+    assert Inputs.values.maximum is None
+    assert Inputs.values.required is False
+    assert Inputs.values.repeated is True
+
+
+def test_repeated_input_exposes_bounded_metadata() -> None:
+    class Inputs(ProcedureInputs):
+        values = repeated_input(
+            EXAMPLE_ARTIFACT,
+            minimum=1,
+            maximum=32,
+            description="The ordered input values.",
+        )
+
+    assert Inputs.values.minimum == 1
+    assert Inputs.values.maximum == 32
+    assert Inputs.values.required is True
+    assert Inputs.values.description == "The ordered input values."
+
+
+def test_repeated_input_instance_access_is_not_constructed_yet() -> None:
+    class Inputs(ProcedureInputs):
+        values = repeated_input(EXAMPLE_ARTIFACT)
+
+    with pytest.raises(AttributeError, match="input values are not constructed yet"):
+        Inputs().values
+
+
+def test_outputs_reject_repeated_input_fields() -> None:
+    with pytest.raises(TypeError, match="Outputs.values must be an output field"):
+
+        class Outputs(ProcedureOutputs):
+            values = repeated_input(EXAMPLE_ARTIFACT)
+
+
+def test_singular_and_repeated_fields_are_incompatible_overrides() -> None:
+    class BaseInputs(ProcedureInputs):
+        value = input(EXAMPLE_ARTIFACT)
+
+    with pytest.raises(TypeError, match="Inputs.value cannot change binding shape"):
+
+        class Inputs(BaseInputs):
+            value = repeated_input(EXAMPLE_ARTIFACT, minimum=1, maximum=1)
+
+
+def test_repeated_descriptor_supplies_input_direction() -> None:
+    field = ProcedureRepeatedInputField(EXAMPLE_ARTIFACT, minimum=2, maximum=4)
+
+    assert field.direction == "input"
+    assert field.minimum == 2
+    assert field.maximum == 4
+    assert field.repeated is True
 
 
 def test_io_fields_are_inherited_before_new_fields() -> None:
@@ -145,6 +255,23 @@ def test_public_attributes_must_be_io_fields() -> None:
 
         class Inputs(ProcedureInputs):
             value = EXAMPLE_ARTIFACT
+
+
+def test_io_metadata_base_cannot_be_declared_as_a_field() -> None:
+    with pytest.raises(TypeError, match="Inputs.value must use a concrete"):
+
+        class Inputs(ProcedureInputs):
+            value = ProcedureIOField(EXAMPLE_ARTIFACT, "input", None)
+
+
+def test_io_field_subclass_must_implement_descriptor_access() -> None:
+    class IncompleteField(ProcedureIOField):
+        pass
+
+    with pytest.raises(TypeError, match="Inputs.value must use a concrete"):
+
+        class Inputs(ProcedureInputs):
+            value = IncompleteField(EXAMPLE_ARTIFACT, "input", None)
 
 
 def test_plain_attribute_cannot_override_an_inherited_field() -> None:
@@ -246,6 +373,73 @@ def test_inherited_field_cannot_change_artifact() -> None:
 
         class Inputs(BaseInputs):
             value = input(OTHER_ARTIFACT)
+
+
+@pytest.mark.parametrize(
+    ("base_field", "override_field"),
+    [
+        (input, optional_input),
+        (optional_input, input),
+    ],
+)
+def test_inherited_field_cannot_change_cardinality(
+    base_field: object, override_field: object
+) -> None:
+    class BaseInputs(ProcedureInputs):
+        value = base_field(EXAMPLE_ARTIFACT)  # type: ignore[operator]
+
+    with pytest.raises(TypeError, match="Inputs.value cannot change cardinality"):
+
+        class Inputs(BaseInputs):
+            value = override_field(EXAMPLE_ARTIFACT)  # type: ignore[operator]
+
+
+@pytest.mark.parametrize(
+    ("direction", "minimum", "maximum", "exception", "message"),
+    [
+        ("sideways", 1, 1, ValueError, "direction"),
+        ("input", True, 1, TypeError, "minimum"),
+        ("input", -1, 1, ValueError, "minimum"),
+        ("input", 0, True, TypeError, "maximum"),
+        ("input", 2, 1, ValueError, "maximum"),
+    ],
+)
+def test_io_field_validates_cardinality_metadata(
+    direction: object,
+    minimum: object,
+    maximum: object,
+    exception: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(exception, match=message):
+        ProcedureIOField(
+            EXAMPLE_ARTIFACT,
+            direction,  # type: ignore[arg-type]
+            None,
+            minimum=minimum,  # type: ignore[arg-type]
+            maximum=maximum,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_type", "direction", "minimum"),
+    [
+        (ProcedureInputField, "input", 1),
+        (ProcedureOutputField, "output", 1),
+        (ProcedureOptionalInputField, "input", 0),
+        (ProcedureOptionalOutputField, "output", 0),
+    ],
+)
+def test_specialized_field_descriptors_supply_their_own_metadata(
+    field_type: type[ProcedureIOField],
+    direction: str,
+    minimum: int,
+) -> None:
+    field = field_type(EXAMPLE_ARTIFACT)  # type: ignore[call-arg]
+
+    assert field.direction == direction
+    assert field.minimum == minimum
+    assert field.maximum == 1
 
 
 def test_multiple_inheritance_preserves_base_order() -> None:
