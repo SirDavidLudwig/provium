@@ -12,7 +12,9 @@ from .config import (
 from .definition import (
     Procedure,
     ProcedureContract,
+    ProcedureContractMetadata,
     ProcedureDefinition,
+    ProcedureIOFieldMetadata,
 )
 from .discovery import discover_procedure_catalogs, reset_procedure_discovery
 from .io import (
@@ -43,8 +45,10 @@ __all__ = [
     "ProcedureConfig",
     "ProcedureConfigurationError",
     "ProcedureContract",
+    "ProcedureContractMetadata",
     "ProcedureDefinition",
     "ProcedureIOField",
+    "ProcedureIOFieldMetadata",
     "ProcedureInputField",
     "ProcedureInputs",
     "ProcedureOptionalInputField",

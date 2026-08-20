@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from importlib import import_module
-from typing import Any, ClassVar, cast, get_args, get_origin
+from typing import Any, ClassVar, Literal, cast, get_args, get_origin
 
 from .config import ProcedureConfig
-from .io import ProcedureInputs, ProcedureOutputs
+from .io import ProcedureInputs, ProcedureIOField, ProcedureOutputs
 
 
 def _require_text(value: object, field_name: str) -> None:
@@ -21,6 +24,151 @@ def _is_dotted_identifier(value: str) -> bool:
     return all(component.isidentifier() for component in value.split("."))
 
 
+_CONTRACT_COMPILATION_HOOKS = frozenset(
+    {
+        "__init_subclass__",
+        "_configuration_specialization",
+        "_validate_configuration_specialization",
+        "_validate_io_declarations",
+        "_validated_configuration",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ProcedureIOFieldMetadata:
+    """Immutable inspection metadata for one procedure I/O field."""
+
+    name: str
+    artifact_identifier: str
+    artifact_description: str
+    direction: Literal["input", "output"]
+    minimum: int
+    maximum: int | None
+    repeated: bool
+    description: str | None
+
+    @property
+    def required(self) -> bool:
+        """Return whether the field requires at least one binding."""
+        return self.minimum > 0
+
+
+@dataclass(frozen=True, slots=True)
+class ProcedureContractMetadata:
+    """Immutable, implementation-free metadata compiled from a contract."""
+
+    configuration_target: str | None
+    _configuration_schema_json: str | None
+    configuration_schema_digest: str | None
+    setup_inputs: tuple[ProcedureIOFieldMetadata, ...]
+    inputs: tuple[ProcedureIOFieldMetadata, ...]
+    outputs: tuple[ProcedureIOFieldMetadata, ...]
+    digest: str
+
+    @property
+    def configuration_schema(self) -> dict[str, object] | None:
+        """Return an isolated, JSON-compatible configuration schema."""
+        if self._configuration_schema_json is None:
+            return None
+        return cast(dict[str, object], json.loads(self._configuration_schema_json))
+
+
+def _canonical_json(value: object) -> tuple[object, str]:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return json.loads(encoded), sha256(encoded).hexdigest()
+
+
+def _compile_field_metadata(
+    fields: Mapping[str, ProcedureIOField],
+) -> tuple[ProcedureIOFieldMetadata, ...]:
+    return tuple(
+        ProcedureIOFieldMetadata(
+            name=name,
+            artifact_identifier=field.artifact.identifier,
+            artifact_description=field.artifact.description,
+            direction=field.direction,
+            minimum=field.minimum,
+            maximum=field.maximum,
+            repeated=field.repeated,
+            description=field.description,
+        )
+        for name, field in fields.items()
+    )
+
+
+def _field_metadata_payload(
+    fields: tuple[ProcedureIOFieldMetadata, ...],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "name": field.name,
+            "artifact_identifier": field.artifact_identifier,
+            "artifact_description": field.artifact_description,
+            "direction": field.direction,
+            "minimum": field.minimum,
+            "maximum": field.maximum,
+            "repeated": field.repeated,
+            "description": field.description,
+        }
+        for field in fields
+    ]
+
+
+def _compile_contract_metadata(
+    configuration: type[ProcedureConfig] | None,
+    setup_inputs: type[ProcedureInputs],
+    inputs: type[ProcedureInputs],
+    outputs: type[ProcedureOutputs],
+) -> ProcedureContractMetadata:
+    configuration_target: str | None = None
+    configuration_schema_json: str | None = None
+    configuration_schema_digest: str | None = None
+    normalized_schema: object = None
+    if configuration is not None:
+        configuration_target = (
+            f"{configuration.__module__}:{configuration.__qualname__}"
+        )
+        normalized_schema, configuration_schema_digest = _canonical_json(
+            configuration.model_json_schema()
+        )
+        configuration_schema_json = json.dumps(
+            normalized_schema,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    setup_metadata = _compile_field_metadata(setup_inputs.fields)
+    input_metadata = _compile_field_metadata(inputs.fields)
+    output_metadata = _compile_field_metadata(outputs.fields)
+    payload = {
+        "configuration_target": configuration_target,
+        "configuration_schema": normalized_schema if configuration else None,
+        "configuration_schema_digest": configuration_schema_digest,
+        "setup_inputs": _field_metadata_payload(setup_metadata),
+        "inputs": _field_metadata_payload(input_metadata),
+        "outputs": _field_metadata_payload(output_metadata),
+    }
+    _, digest = _canonical_json(payload)
+    return ProcedureContractMetadata(
+        configuration_target=configuration_target,
+        _configuration_schema_json=configuration_schema_json,
+        configuration_schema_digest=configuration_schema_digest,
+        setup_inputs=setup_metadata,
+        inputs=input_metadata,
+        outputs=output_metadata,
+        digest=digest,
+    )
+
+
 class ProcedureContract[ConfigT: ProcedureConfig | None]:
     """Lightweight configuration and I/O contract for a procedure."""
 
@@ -28,11 +176,29 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
     SetupInputs: ClassVar[type[ProcedureInputs]] = ProcedureInputs
     Inputs: ClassVar[type[ProcedureInputs]] = ProcedureInputs
     Outputs: ClassVar[type[ProcedureOutputs]] = ProcedureOutputs
+    metadata: ClassVar[ProcedureContractMetadata]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         # Validate the declaration here so a malformed plugin fails
         # while it is imported, rather than later during procedure execution.
         super().__init_subclass__(**kwargs)
+        if _CONTRACT_COMPILATION_HOOKS & cls.__dict__.keys():
+            raise TypeError("procedure contract cannot override contract compilation")
+        configuration = cls._validated_configuration()
+        cls._validate_io_declarations()
+        cls._validate_configuration_specialization(
+            configuration,
+            cls._configuration_specialization(),
+        )
+        cls.metadata = _compile_contract_metadata(
+            configuration,
+            cls.SetupInputs,
+            cls.Inputs,
+            cls.Outputs,
+        )
+
+    @classmethod
+    def _validated_configuration(cls) -> type[ProcedureConfig] | None:
         configuration = cls.configuration
         if configuration is not None and (
             not isinstance(configuration, type)
@@ -42,6 +208,10 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
                 "procedure contract configuration must be a ProcedureConfig "
                 "class or None"
             )
+        return cast(type[ProcedureConfig] | None, configuration)
+
+    @classmethod
+    def _validate_io_declarations(cls) -> None:
         for name in ("SetupInputs", "Inputs"):
             value = getattr(cls, name)
             if not isinstance(value, type) or not issubclass(value, ProcedureInputs):
@@ -54,9 +224,10 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
                 "procedure contract Outputs must be a ProcedureOutputs class"
             )
 
-        # Ensure the runtime configuration agrees with the contract's generic
-        # type, including inherited specializations (the concrete ConfigT in
-        # ProcedureContract[ConfigT]).
+    @classmethod
+    def _configuration_specialization(cls) -> type[object]:
+        # Find the concrete ConfigT supplied by ProcedureContract[ConfigT],
+        # including specializations inherited through helper contract classes.
         specializations: set[type[object]] = set()
         for base in cls.__mro__:
             for generic_base in getattr(base, "__orig_bases__", ()):
@@ -70,8 +241,13 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
             raise TypeError(
                 "procedure contract must have exactly one generic specialization"
             )
-        expected_configuration = next(iter(specializations))
+        return next(iter(specializations))
 
+    @staticmethod
+    def _validate_configuration_specialization(
+        configuration: type[ProcedureConfig] | None,
+        expected_configuration: type[object],
+    ) -> None:
         # ProcedureContract[None] is represented at runtime by NoneType, while
         # its declaration stores the value None. Configured contracts instead
         # store the exact model class named by their generic specialization.
@@ -152,7 +328,9 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
 __all__ = [
     "Procedure",
     "ProcedureContract",
+    "ProcedureContractMetadata",
     "ProcedureDefinition",
+    "ProcedureIOFieldMetadata",
     "ProcedureInputs",
     "ProcedureOutputs",
 ]
