@@ -50,6 +50,7 @@ from .procedure import (
     validate_procedure_configuration,
 )
 from .provenance import (
+    ArtifactLineage,
     ArtifactRecord,
     ArtifactReference,
     ProcedureExecutionRecord,
@@ -62,6 +63,7 @@ __all__ = [
     "Artifact",
     "ArtifactCatalog",
     "ArtifactDefinition",
+    "ArtifactLineage",
     "ArtifactReadBinding",
     "ArtifactReader",
     "ArtifactRecord",

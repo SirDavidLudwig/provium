@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, ClassVar, Self, cast
 
 
@@ -210,7 +211,241 @@ class ProcedureExecutionRecord(_SerializableRecord):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactLineage(_SerializableRecord):
+    """A normalized, mergeable graph of artifacts and producing executions."""
+
+    artifacts: Mapping[str, ArtifactRecord] = field(
+        default_factory=dict[str, ArtifactRecord]
+    )
+    executions: Mapping[str, ProcedureExecutionRecord] = field(
+        default_factory=dict[str, ProcedureExecutionRecord]
+    )
+    _shape_name: ClassVar[str] = "artifact lineage"
+
+    def __post_init__(self) -> None:
+        artifacts = dict(self.artifacts)
+        executions = dict(self.executions)
+        self._validate_artifacts(artifacts, executions)
+        self._validate_executions(artifacts, executions)
+        self._validate_acyclic(artifacts, executions)
+        object.__setattr__(self, "artifacts", MappingProxyType(artifacts))
+        object.__setattr__(self, "executions", MappingProxyType(executions))
+
+    @staticmethod
+    def _validate_artifacts(
+        artifacts: Mapping[str, ArtifactRecord],
+        executions: Mapping[str, ProcedureExecutionRecord],
+    ) -> None:
+        for identity, record in artifacts.items():
+            if not isinstance(record, ArtifactRecord):
+                raise TypeError("artifact map values must be artifact records")
+            if identity != record.reference.identity:
+                raise ValueError("artifact map key does not match artifact identity")
+            execution = executions.get(record.producer_execution_identity)
+            if execution is None:
+                raise ValueError(
+                    f"artifact {identity!r} has a missing producer execution"
+                )
+            if record.reference not in execution.outputs:
+                raise ValueError(
+                    f"artifact {identity!r} is not an output of its producer execution"
+                )
+
+    @staticmethod
+    def _validate_executions(
+        artifacts: Mapping[str, ArtifactRecord],
+        executions: Mapping[str, ProcedureExecutionRecord],
+    ) -> None:
+        for identity, execution in executions.items():
+            if not isinstance(execution, ProcedureExecutionRecord):
+                raise TypeError(
+                    "execution map values must be procedure execution records"
+                )
+            if identity != execution.identity:
+                raise ValueError("execution map key does not match execution identity")
+            for reference in (*execution.inputs, *execution.outputs):
+                record = artifacts.get(reference.identity)
+                if record is None:
+                    raise ValueError(
+                        f"execution references missing artifact {reference.identity!r}"
+                    )
+                if record.reference != reference:
+                    raise ValueError(
+                        f"execution reference does not match artifact "
+                        f"{reference.identity!r}"
+                    )
+
+    @staticmethod
+    def _validate_acyclic(
+        artifacts: Mapping[str, ArtifactRecord],
+        executions: Mapping[str, ProcedureExecutionRecord],
+    ) -> None:
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(identity: str) -> None:
+            if identity in visiting:
+                raise ValueError("artifact lineage contains a producer cycle")
+            if identity in visited:
+                return
+            visiting.add(identity)
+            record = artifacts[identity]
+            execution = executions[record.producer_execution_identity]
+            for reference in execution.inputs:
+                visit(reference.identity)
+            visiting.remove(identity)
+            visited.add(identity)
+
+        for identity in artifacts:
+            visit(identity)
+
+    @classmethod
+    def for_execution(
+        cls,
+        execution: ProcedureExecutionRecord,
+        output_records: tuple[ArtifactRecord, ...],
+        input_lineages: tuple[ArtifactLineage, ...] = (),
+    ) -> Self:
+        """Extend merged input lineages with one completed execution."""
+        lineage = cls._merge_many(input_lineages)
+        records = cls._validated_output_records(execution, output_records)
+        cls._validate_inputs(execution, lineage)
+
+        artifacts = dict(lineage.artifacts)
+        artifacts.update(records)
+        executions = dict(lineage.executions)
+        existing = executions.get(execution.identity)
+        if existing is not None and existing != execution:
+            raise ValueError(f"execution conflict for identity {execution.identity!r}")
+        executions[execution.identity] = execution
+        return cls(artifacts, executions)
+
+    @classmethod
+    def _merge_many(cls, lineages: tuple[ArtifactLineage, ...]) -> Self:
+        result = cls()
+        for lineage in lineages:
+            result = result.merge(lineage)
+        return result
+
+    @staticmethod
+    def _validated_output_records(
+        execution: ProcedureExecutionRecord,
+        output_records: tuple[ArtifactRecord, ...],
+    ) -> dict[str, ArtifactRecord]:
+        output_references = {
+            reference.identity: reference for reference in execution.outputs
+        }
+        records = {record.reference.identity: record for record in output_records}
+        if set(records) != set(output_references) or any(
+            records[identity].reference != reference
+            for identity, reference in output_references.items()
+        ):
+            raise ValueError("output records must exactly match execution outputs")
+        if any(
+            record.producer_execution_identity != execution.identity
+            for record in output_records
+        ):
+            raise ValueError("output record producer must match the execution")
+        return records
+
+    @staticmethod
+    def _validate_inputs(
+        execution: ProcedureExecutionRecord,
+        lineage: ArtifactLineage,
+    ) -> None:
+        for reference in execution.inputs:
+            record = lineage.artifacts.get(reference.identity)
+            if record is None or record.reference != reference:
+                raise ValueError(
+                    f"input artifact is absent from input lineage: {reference.identity}"
+                )
+
+    def merge(self, other: ArtifactLineage) -> Self:
+        """Merge another compatible lineage into this graph."""
+        artifacts = dict(self.artifacts)
+        executions = dict(self.executions)
+        for identity, record in other.artifacts.items():
+            if identity in artifacts and artifacts[identity] != record:
+                raise ValueError(f"artifact conflict for identity {identity!r}")
+            artifacts[identity] = record
+        for identity, execution in other.executions.items():
+            if identity in executions and executions[identity] != execution:
+                raise ValueError(f"execution conflict for identity {identity!r}")
+            executions[identity] = execution
+        return type(self)(artifacts, executions)
+
+    def artifact(self, reference: ArtifactReference) -> ArtifactRecord:
+        """Return the record matching an exact artifact reference."""
+        record = self.artifacts[reference.identity]
+        if record.reference != reference:
+            raise ValueError("artifact reference does not match the stored artifact")
+        return record
+
+    def producing_execution(
+        self,
+        reference: ArtifactReference,
+    ) -> ProcedureExecutionRecord:
+        """Return the execution that produced an artifact."""
+        record = self.artifact(reference)
+        return self.executions[record.producer_execution_identity]
+
+    def ancestry(self, reference: ArtifactReference) -> Self:
+        """Return the subgraph needed to produce an artifact."""
+        artifacts: dict[str, ArtifactRecord] = {}
+        executions: dict[str, ProcedureExecutionRecord] = {}
+
+        def visit(current: ArtifactReference) -> None:
+            record = self.artifact(current)
+            if current.identity in artifacts:
+                return
+            artifacts[current.identity] = record
+            execution = self.executions[record.producer_execution_identity]
+            executions[execution.identity] = execution
+            for input_reference in execution.inputs:
+                visit(input_reference)
+            for output_reference in execution.outputs:
+                artifacts[output_reference.identity] = self.artifact(output_reference)
+
+        visit(reference)
+        return type(self)(artifacts, executions)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "artifacts": [
+                self.artifacts[identity].to_dict()
+                for identity in sorted(self.artifacts)
+            ],
+            "executions": [
+                self.executions[identity].to_dict()
+                for identity in sorted(self.executions)
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> Self:
+        cls._expect_keys(value, {"artifacts", "executions"})
+        if not isinstance(value["artifacts"], list) or not isinstance(
+            value["executions"], list
+        ):
+            raise TypeError("invalid artifact lineage")
+        artifact_values = cast(list[Mapping[str, Any]], value["artifacts"])
+        execution_values = cast(list[Mapping[str, Any]], value["executions"])
+        artifacts = [ArtifactRecord.from_dict(item) for item in artifact_values]
+        executions = [
+            ProcedureExecutionRecord.from_dict(item) for item in execution_values
+        ]
+        artifact_map = {record.reference.identity: record for record in artifacts}
+        if len(artifact_map) != len(artifacts):
+            raise ValueError("duplicate artifact in serialized lineage")
+        execution_map = {execution.identity: execution for execution in executions}
+        if len(execution_map) != len(executions):
+            raise ValueError("duplicate execution in serialized lineage")
+        return cls(artifact_map, execution_map)
+
+
 __all__ = [
+    "ArtifactLineage",
     "ArtifactRecord",
     "ArtifactReference",
     "ProcedureExecutionRecord",
