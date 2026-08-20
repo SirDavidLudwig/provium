@@ -99,6 +99,37 @@ def test_header_supports_empty_large_and_relocated_bodies() -> None:
     assert decode_header(encoded) == relocated
 
 
+def test_header_can_place_the_body_immediately_after_variable_metadata() -> None:
+    reference = ArtifactReference("artifact-large", "example.LargeV1")
+    execution = ProcedureExecutionRecord(
+        "execution-large",
+        ProcedureRecord(
+            "example.CreateV1",
+            "contract-digest",
+            config={"payload": "x" * 10_000},
+            config_codec="json",
+        ),
+        outputs=(reference,),
+    )
+    digest = "b" * 64
+    large_lineage = ArtifactLineage.for_execution(
+        execution,
+        (ArtifactRecord(reference, digest, execution.identity),),
+    )
+
+    expected = ArtifactHeader.create(
+        artifact_identifier=reference.artifact_identifier,
+        artifact_identity=reference.identity,
+        body_length=123,
+        body_digest=digest,
+        lineage=large_lineage,
+    )
+
+    assert expected.body_offset == expected.metadata_offset + expected.metadata_length
+    assert expected.body_offset > 4096
+    assert decode_header(encode_header(expected)) == expected
+
+
 def test_decode_rejects_invalid_prefix_values() -> None:
     encoded = bytearray(encode_header(header()))
     encoded[: len(MAGIC)] = b"BADMAGIC"

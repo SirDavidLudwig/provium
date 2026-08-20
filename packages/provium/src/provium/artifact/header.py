@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import struct
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Self, cast
 
 from provium.provenance import ArtifactLineage, ArtifactReference
 
@@ -62,6 +62,37 @@ class ArtifactHeader:
     lineage: ArtifactLineage
     metadata_offset: int = PREFIX_SIZE
     metadata_length: int = field(init=False)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        artifact_identifier: str,
+        artifact_identity: str,
+        body_length: int,
+        body_digest: str,
+        lineage: ArtifactLineage,
+        metadata_offset: int = PREFIX_SIZE,
+    ) -> Self:
+        """Create a header with its body directly after encoded metadata."""
+        sizing_header = cls(
+            artifact_identifier=artifact_identifier,
+            artifact_identity=artifact_identity,
+            body_offset=_UINT64_MAX,
+            body_length=body_length,
+            body_digest=body_digest,
+            lineage=lineage,
+            metadata_offset=metadata_offset,
+        )
+        return cls(
+            artifact_identifier=artifact_identifier,
+            artifact_identity=artifact_identity,
+            body_offset=metadata_offset + sizing_header.metadata_length,
+            body_length=body_length,
+            body_digest=body_digest,
+            lineage=lineage,
+            metadata_offset=metadata_offset,
+        )
 
     def __post_init__(self) -> None:
         _require_text(self.artifact_identifier, "artifact_identifier")
