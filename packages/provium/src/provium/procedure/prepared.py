@@ -1,11 +1,11 @@
 """Reusable prepared procedure instances."""
 
 from threading import Lock
-from typing import Any, cast
+from typing import Any, Never, cast
 
 from provium.artifact import ArtifactReadBinding, ArtifactWriteBinding
 from provium.provenance import ProcedureRecord
-from provium.session import session
+from provium.session import PersistentSession, session
 
 from .authorization import authorize_bindings
 from .config import ConfigurationSnapshot, ProcedureConfig
@@ -33,7 +33,29 @@ class PreparedProcedure[
         self._state_lock = Lock()
         self._active = False
         self._closed = False
-        procedure.setup(ProcedureSetupContext(), configuration, setup_inputs)
+        self._setup_session = PersistentSession()
+        self._setup_bindings = self._input_bindings(setup_inputs)
+        self._setup_identities: dict[int, str] = {}
+        try:
+            self._run_setup(setup_inputs)
+        except BaseException as error:
+            self._close_setup_after_failure(error)
+
+    def _run_setup(self, setup_inputs: ProcedureInputs) -> None:
+        with self._setup_session:
+            with authorize_bindings(self._setup_bindings, {}, {}):
+                self._setup_identities = self._register_inputs(self._setup_bindings)
+            with authorize_bindings(
+                self._setup_bindings,
+                {},
+                {},
+                input_identities=self._setup_identities,
+            ):
+                self._procedure.setup(
+                    ProcedureSetupContext(),
+                    self._configuration,
+                    setup_inputs,
+                )
 
     @property
     def configuration(self) -> ConfigT:
@@ -44,20 +66,21 @@ class PreparedProcedure[
         """Process one invocation on the prepared instance."""
         self._begin_execution()
         try:
-            input_bindings = self._input_bindings(inputs)
-            output_bindings = self._output_bindings(outputs)
-            if output_bindings:
-                self._execute_with_outputs(
-                    inputs,
-                    outputs,
-                    input_bindings,
-                    output_bindings,
-                )
-            elif input_bindings:
-                self._execute_without_outputs(inputs, outputs, input_bindings)
-            else:
-                with authorize_bindings((), {}, {}):
-                    self._process(inputs, outputs)
+            with self._setup_session:
+                input_bindings = self._input_bindings(inputs)
+                output_bindings = self._output_bindings(outputs)
+                if output_bindings:
+                    self._execute_with_outputs(
+                        inputs,
+                        outputs,
+                        input_bindings,
+                        output_bindings,
+                    )
+                elif input_bindings:
+                    self._execute_without_outputs(inputs, outputs, input_bindings)
+                else:
+                    with authorize_bindings((), {}, {}):
+                        self._process(inputs, outputs)
         finally:
             self._finish_execution()
 
@@ -159,7 +182,40 @@ class PreparedProcedure[
         """Close the prepared instance exactly once."""
         if not self._begin_close():
             return
-        self._procedure.close()
+        close_error = self._close_procedure()
+        self._close_setup_resources(close_error)
+
+    def _close_procedure(self) -> BaseException | None:
+        close_error: BaseException | None = None
+        try:
+            with self._setup_session:
+                with authorize_bindings(
+                    self._setup_bindings,
+                    {},
+                    {},
+                    input_identities=self._setup_identities,
+                ):
+                    self._procedure.close()
+        except BaseException as error:
+            close_error = error
+        return close_error
+
+    def _close_setup_resources(self, close_error: BaseException | None) -> None:
+        try:
+            self._setup_session.close()
+        except BaseException as setup_close_error:
+            if close_error is not None:
+                raise close_error from setup_close_error
+            raise
+        if close_error is not None:
+            raise close_error
+
+    def _close_setup_after_failure(self, error: BaseException) -> Never:
+        try:
+            self._setup_session.close()
+        except BaseException as close_error:
+            raise error from close_error
+        raise error
 
     def _begin_execution(self) -> None:
         with self._state_lock:

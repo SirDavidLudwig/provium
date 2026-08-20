@@ -25,6 +25,7 @@ from provium import (
     ProcedureOutputs,
     ProcedureProcessContext,
     ProcedureRecord,
+    ProcedureSetupContext,
     decode_header,
     encode_header,
     input,
@@ -575,3 +576,154 @@ def test_input_only_callback_uses_authorized_child_session(tmp_path: Path) -> No
         assert parent.inputs == ()
 
     assert values == [b"input only"]
+
+
+class SetupContract(ProcedureContract[None]):
+    class SetupInputs(ProcedureInputs):
+        model = input(BYTES)
+
+    class Inputs(ProcedureInputs):
+        pass
+
+    class Outputs(ProcedureOutputs):
+        result = output(BYTES)
+
+
+SETUP_DEFINITION = ProcedureDefinition(
+    "example.PreparedSetupV1",
+    f"{__name__}:SetupProcedure",
+    "Use persistent setup input",
+    None,
+    SetupContract,
+)
+
+
+class SetupProcedure(
+    Procedure[
+        None,
+        SetupContract.SetupInputs,
+        SetupContract.Inputs,
+        SetupContract.Outputs,
+    ]
+):
+    definition = SETUP_DEFINITION
+
+    def __init__(self) -> None:
+        self.model: BytesReader | None = None
+        self.closed_with_access = False
+
+    def setup(
+        self,
+        context: ProcedureSetupContext,
+        configuration: None,
+        inputs: SetupContract.SetupInputs,
+    ) -> None:
+        self.model = inputs.model.open()
+
+    def process(
+        self,
+        context: ProcedureProcessContext,
+        configuration: None,
+        inputs: SetupContract.Inputs,
+        outputs: SetupContract.Outputs,
+    ) -> None:
+        assert self.model is not None
+        self.model.body.seek(0)
+        outputs.result.open().write(self.model.read())
+
+    def close(self) -> None:
+        assert self.model is not None
+        self.model.body.seek(0)
+        self.closed_with_access = self.model.read() == b"model"
+
+
+def test_setup_inputs_persist_and_flow_into_every_execution_lineage(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.pa"
+    model_record = write_source(model_path, "model", b"model")
+    procedure = SetupProcedure()
+    prepared = PreparedProcedure(
+        procedure,
+        None,
+        SetupContract.SetupInputs._from_bindings(
+            {"model": BytesArtifact.bind_read(model_path)}
+        ),
+    )
+
+    destinations = (tmp_path / "first.pa", tmp_path / "second.pa")
+    for destination in destinations:
+        prepared.execute(
+            inputs=SetupContract.Inputs._from_bindings({}),
+            outputs=SetupContract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    assert procedure.model is not None
+    assert not procedure.model.closed
+    for destination in destinations:
+        header = decode_header(destination.read_bytes())
+        execution = next(
+            execution
+            for execution in header.lineage.executions.values()
+            if execution.procedure.name == SETUP_DEFINITION.identifier
+        )
+        assert execution.inputs == (model_record.reference,)
+        assert destination.read_bytes()[header.body_offset :] == b"model"
+
+    prepared.close()
+
+    assert procedure.closed_with_access
+    assert procedure.model.closed
+
+
+def test_setup_callback_rejects_equal_but_undeclared_input_binding(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.pa"
+    write_source(model_path, "model", b"model")
+
+    class UndeclaredSetupProcedure(SetupProcedure):
+        def setup(
+            self,
+            context: ProcedureSetupContext,
+            configuration: None,
+            inputs: SetupContract.SetupInputs,
+        ) -> None:
+            BytesArtifact.bind_read(model_path).open()
+
+    with pytest.raises(RuntimeError, match="not declared"):
+        PreparedProcedure(
+            UndeclaredSetupProcedure(),
+            None,
+            SetupContract.SetupInputs._from_bindings(
+                {"model": BytesArtifact.bind_read(model_path)}
+            ),
+        )
+
+
+def test_close_callback_rejects_undeclared_input_and_closes_setup_resources(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.pa"
+    write_source(model_path, "model", b"model")
+
+    class UndeclaredCloseProcedure(SetupProcedure):
+        def close(self) -> None:
+            BytesArtifact.bind_read(model_path).open()
+
+    procedure = UndeclaredCloseProcedure()
+    prepared = PreparedProcedure(
+        procedure,
+        None,
+        SetupContract.SetupInputs._from_bindings(
+            {"model": BytesArtifact.bind_read(model_path)}
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="not declared"):
+        prepared.close()
+
+    assert procedure.model is not None
+    assert procedure.model.closed

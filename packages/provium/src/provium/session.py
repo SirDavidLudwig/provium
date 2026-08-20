@@ -214,6 +214,58 @@ class Session:
         return first_error
 
 
+class PersistentSession(Session):
+    """Retain resources while activating only around procedure lifecycle hooks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    def __enter__(self) -> Self:
+        if self.closed:
+            raise RuntimeError("persistent session is closed")
+        if self.active:
+            raise RuntimeError("persistent session is already active")
+        parent = current_context()
+        if parent is not None and not isinstance(parent, Session):
+            raise RuntimeError("active artifact context is not a session")
+        self.parent = parent
+        self.active = True
+        activation = activate_context(self)
+        activation.__enter__()
+        self._activation = activation
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if not self.active or current_context() is not self or self._activation is None:
+            raise RuntimeError("persistent session is not active")
+        activation = self._activation
+        self.active = False
+        self._activation = None
+        activation.__exit__(exc_type, exc_value, traceback)
+
+    def close(self) -> None:
+        """Close retained resources exactly once in their owning context."""
+        if self.closed:
+            return
+        close_error: Exception | None = None
+        self.__enter__()
+        try:
+            close_error = self._close_resources()
+        finally:
+            try:
+                self.__exit__(None, None, None)
+            finally:
+                self.closed = True
+        if close_error is not None:
+            raise close_error
+
+
 def session() -> Session:
     """Create a new artifact resource session."""
     return Session()

@@ -14,6 +14,7 @@ from provium import (
     ProcedureProcessContext,
     ProcedureSetupContext,
 )
+from provium.session import PersistentSession
 
 
 class Config(ProcedureConfig):
@@ -232,3 +233,66 @@ def test_unconfigured_procedure_receives_none_for_every_lifecycle_hook() -> None
     )
 
     assert configurations == [None, None]
+
+
+def test_setup_failure_preserves_error_when_resource_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_error = RuntimeError("setup cleanup failed")
+
+    class SetupFailure(CounterProcedure):
+        def setup(
+            self,
+            context: ProcedureSetupContext,
+            configuration: Config,
+            inputs: SetupInputs,
+        ) -> None:
+            raise ValueError("setup failed")
+
+    def fail_close(self: PersistentSession) -> None:
+        raise cleanup_error
+
+    monkeypatch.setattr(PersistentSession, "close", fail_close)
+
+    with pytest.raises(ValueError, match="setup failed") as caught:
+        prepare(SetupFailure())
+
+    assert caught.value.__cause__ is cleanup_error
+
+
+def test_close_reports_setup_resource_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prepared, _, _ = prepare()
+
+    def fail_close(self: PersistentSession) -> None:
+        raise RuntimeError("resource cleanup failed")
+
+    monkeypatch.setattr(PersistentSession, "close", fail_close)
+
+    with pytest.raises(RuntimeError, match="resource cleanup failed"):
+        prepared.close()
+
+
+def test_close_preserves_procedure_error_when_resource_cleanup_also_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    procedure_error = ValueError("procedure close failed")
+    cleanup_error = RuntimeError("resource cleanup failed")
+
+    class CloseFailure(CounterProcedure):
+        def close(self) -> None:
+            raise procedure_error
+
+    prepared, _, _ = prepare(CloseFailure())
+
+    def fail_close(self: PersistentSession) -> None:
+        raise cleanup_error
+
+    monkeypatch.setattr(PersistentSession, "close", fail_close)
+
+    with pytest.raises(ValueError, match="procedure close failed") as caught:
+        prepared.close()
+
+    assert caught.value is procedure_error
+    assert caught.value.__cause__ is cleanup_error

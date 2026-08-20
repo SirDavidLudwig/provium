@@ -6,6 +6,7 @@ import pytest
 
 from provium import current_session, session
 from provium.context import activate_context, current_context
+from provium.session import PersistentSession
 
 
 @dataclass
@@ -126,3 +127,58 @@ def test_manage_rejects_a_resource_without_a_close_operation() -> None:
     with session() as active:
         with pytest.raises(TypeError, match="close"):
             active.manage(object())  # type: ignore[arg-type]
+
+
+def test_persistent_session_reactivates_and_closes_retained_resources() -> None:
+    persistent = PersistentSession()
+    closed: list[str] = []
+
+    with persistent:
+        persistent.manage(Resource("resource", closed))
+        with pytest.raises(RuntimeError, match="already active"):
+            persistent.__enter__()
+
+    assert closed == []
+    with pytest.raises(RuntimeError, match="not active"):
+        persistent.__exit__(None, None, None)
+
+    persistent.close()
+    persistent.close()
+
+    assert closed == ["resource"]
+    with pytest.raises(RuntimeError, match="closed"):
+        persistent.__enter__()
+
+
+def test_persistent_session_rejects_a_non_session_parent_context() -> None:
+    persistent = PersistentSession()
+
+    with activate_context(object()), pytest.raises(RuntimeError, match="not a session"):
+        persistent.__enter__()
+
+
+def test_persistent_session_reports_resource_cleanup_failure() -> None:
+    persistent = PersistentSession()
+    closed: list[str] = []
+    with persistent:
+        persistent.manage(Resource("resource", closed, RuntimeError("cleanup failed")))
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        persistent.close()
+
+    assert persistent.closed
+    assert closed == ["resource"]
+
+
+def test_persistent_session_is_closed_after_base_exception_cleanup() -> None:
+    persistent = PersistentSession()
+    closed: list[str] = []
+    with persistent:
+        persistent.manage(Resource("resource", closed, KeyboardInterrupt("stopped")))
+
+    with pytest.raises(KeyboardInterrupt, match="stopped"):
+        persistent.close()
+
+    assert persistent.closed
+    assert current_context() is None
+    assert closed == ["resource"]
