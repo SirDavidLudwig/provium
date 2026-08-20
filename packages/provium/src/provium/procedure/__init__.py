@@ -18,6 +18,7 @@ from .definition import (
     ProcedureIOFieldMetadata,
 )
 from .discovery import discover_procedure_catalogs, reset_procedure_discovery
+from .executor import ProcedureExecutor
 from .io import (
     ProcedureInputField,
     ProcedureInputs,
@@ -50,6 +51,7 @@ __all__ = [
     "ProcedureContract",
     "ProcedureContractMetadata",
     "ProcedureDefinition",
+    "ProcedureExecutor",
     "ProcedureIOField",
     "ProcedureIOFieldMetadata",
     "ProcedureInputField",

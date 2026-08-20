@@ -624,6 +624,14 @@ class ProcedureOutputs(_ProcedureIORecord):
     _direction = "output"
 
 
+def build_procedure_inputs[InputsT: ProcedureInputs](
+    record_type: type[InputsT],
+    bindings: Mapping[str, object],
+) -> InputsT:
+    """Construct a typed input record for the procedure executor."""
+    return record_type._from_bindings(bindings)  # pyright: ignore[reportPrivateUsage]
+
+
 def input[ReaderT: ArtifactReader, WriterT: ArtifactWriter](
     artifact: ArtifactDefinition[Artifact[ReaderT, WriterT]],
     *,
