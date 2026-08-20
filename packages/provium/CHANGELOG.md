@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/Project-Provium/provium/compare/provium-v0.5.0...provium-v0.6.0) (2026-08-20)
+
+
+### Features
+
+* add artifact load and dump commands ([b63859d](https://github.com/Project-Provium/provium/commit/b63859d30644cb5257efadf4627c8dcc264cc620))
+
+
+### Bug Fixes
+
+* install wheel builder for smoke tests ([048cb72](https://github.com/Project-Provium/provium/commit/048cb7299b96b70176b3441716d2ae91c5e6ec2c))
+* prepare workflows for merge ([265fd7f](https://github.com/Project-Provium/provium/commit/265fd7fe71b9d323aa9e9d7fc74414553b8c6983))
+* use canonical repository links ([79557ed](https://github.com/Project-Provium/provium/commit/79557edee32a56a92e69973ecf6b7e4280a9d31a))
+
 ## [0.5.0](https://github.com/SirDavidLudwig/provium/compare/provium-v0.4.0...provium-v0.5.0) (2026-08-17)
 
 
