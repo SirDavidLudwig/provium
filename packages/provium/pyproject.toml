@@ -37,6 +37,7 @@ yaml = [
 ]
 test = [
     "PyYAML>=6,<7",
+    "build>=1.2",
     "pyright>=1.1.411",
     "pytest>=8.3",
     "pytest-cov>=6.0",
