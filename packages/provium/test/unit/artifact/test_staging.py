@@ -17,6 +17,7 @@ from provium import (
     ProcedureExecutionRecord,
     ProcedureRecord,
     StagedArtifact,
+    decode_header,
     session,
     stage_artifact,
 )
@@ -63,9 +64,10 @@ def provisional_header(
     identifier: str = DEFINITION.identifier,
     *,
     body_length: int = 0,
+    body_digest: str | None = None,
 ) -> ArtifactHeader:
     reference = ArtifactReference("artifact-1", identifier)
-    digest = hashlib.sha256(b"").hexdigest()
+    digest = hashlib.sha256(b"").hexdigest() if body_digest is None else body_digest
     execution = ProcedureExecutionRecord(
         "execution-1",
         ProcedureRecord("example.CreateV1", "contract-digest"),
@@ -210,3 +212,196 @@ def test_writer_construction_failure_removes_the_temporary_file(
 
     assert not destination.exists()
     assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_finalize_body_streams_its_length_and_digest_from_disk(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "value.pa"
+    body = b"body" * (1024 * 1024)
+
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(destination),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(body)
+
+        assert staged.finalize_body() == (
+            len(body),
+            hashlib.sha256(body).hexdigest(),
+        )
+        assert staged.finalize_body() == (
+            len(body),
+            hashlib.sha256(body).hexdigest(),
+        )
+        assert staged.writer.closed
+        assert not destination.exists()
+
+
+def test_publish_writes_final_header_and_atomically_replaces_destination(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "value.pa"
+    destination.write_bytes(b"existing")
+    body = b"replacement"
+
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(destination),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(body)
+        length, digest = staged.finalize_body()
+        final_metadata = provisional_header(
+            body_length=length,
+            body_digest=digest,
+        )
+
+        staged.publish(final_metadata)
+        staged.publish(final_metadata)
+        staged.abort()
+
+        assert staged.published
+        assert not staged.aborted
+        assert staged.writer.container_finalized
+        assert not staged.temporary_path.exists()
+
+    data = destination.read_bytes()
+    actual = decode_header(data)
+    assert actual == final_metadata
+    assert data[actual.body_offset : actual.body_offset + actual.body_length] == body
+
+
+def test_publish_rejects_metadata_that_does_not_match_the_body(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "value.pa"
+
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(destination),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(b"body")
+        staged.finalize_body()
+
+        with pytest.raises(ValueError, match="digest"):
+            staged.publish(provisional_header(body_length=4, body_digest="b" * 64))
+
+        assert not staged.published
+        assert staged.temporary_path.exists()
+        assert not destination.exists()
+
+
+def test_publish_rechecks_the_body_after_its_initial_digest(tmp_path: Path) -> None:
+    destination = tmp_path / "value.pa"
+
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(destination),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(b"body")
+        length, digest = staged.finalize_body()
+        metadata = provisional_header(body_length=length, body_digest=digest)
+
+        with staged.temporary_path.open("r+b") as stream:
+            stream.seek(metadata.body_offset)
+            stream.write(b"BAD!")
+
+        with pytest.raises(ValueError, match="digest"):
+            staged.publish(metadata)
+
+        assert not destination.exists()
+
+
+def test_finalize_body_rejects_a_truncated_temporary_file(tmp_path: Path) -> None:
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(tmp_path / "value.pa"),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(b"body")
+        staged.writer.body.flush()
+        with staged.temporary_path.open("r+b") as stream:
+            stream.truncate(4098)
+
+        with pytest.raises(ValueError, match="truncated"):
+            staged.finalize_body()
+
+
+def test_publish_validates_metadata_type_and_final_length(tmp_path: Path) -> None:
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(tmp_path / "value.pa"),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(b"body")
+
+        with pytest.raises(TypeError, match="ArtifactHeader"):
+            staged.publish(object())  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="body length"):
+            staged.publish(provisional_header(body_length=3))
+
+
+def test_finalization_requires_an_available_owning_session(tmp_path: Path) -> None:
+    with session() as owner:
+        aborted = stage_artifact(
+            BytesArtifact.bind_write(tmp_path / "aborted.pa"),
+            provisional_header(),
+            owner,
+        )
+        aborted.abort()
+        with pytest.raises(RuntimeError, match="aborted"):
+            aborted.finalize_body()
+
+        staged = stage_artifact(
+            BytesArtifact.bind_write(tmp_path / "value.pa"),
+            provisional_header(),
+            owner,
+        )
+        with session(), pytest.raises(RuntimeError, match="active session"):
+            staged.finalize_body()
+
+        owner.active = False
+        try:
+            with pytest.raises(RuntimeError, match="active session"):
+                staged.finalize_body()
+        finally:
+            owner.active = True
+
+
+def test_failed_atomic_replace_preserves_destination_and_cleans_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "value.pa"
+    destination.write_bytes(b"existing")
+
+    with session() as owner:
+        staged = stage_artifact(
+            BytesArtifact.bind_write(destination),
+            provisional_header(),
+            owner,
+        )
+        staged.writer.write(b"replacement")
+        length, digest = staged.finalize_body()
+        metadata = provisional_header(body_length=length, body_digest=digest)
+
+        def fail_replace(_source: Path, _destination: Path) -> Path:
+            raise OSError("replace failed")
+
+        monkeypatch.setattr(Path, "replace", fail_replace)
+        with pytest.raises(OSError, match="replace failed"):
+            staged.publish(metadata)
+
+        assert destination.read_bytes() == b"existing"
+
+    assert not staged.temporary_path.exists()

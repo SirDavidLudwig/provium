@@ -68,7 +68,7 @@ class ArtifactWriter:
     def close(self) -> None:
         self._body.close()
 
-    def finalize(self) -> None:
+    def finalize(self, metadata: ArtifactHeader | None = None) -> None:
         if self._container_finalized:
             return
         if not self.closed:
@@ -77,6 +77,8 @@ class ArtifactWriter:
             self._body.check_context()
         if self._finalizer is not None:
             self._finalizer(self)
+        if metadata is not None:
+            self._replace_metadata(metadata)
         self._validate_final_metadata(self._metadata)
         self._container_finalized = True
 
