@@ -122,7 +122,10 @@ class ProcedureExecutor:
             type[ProcedureInputs],
             getattr(definition.contract, "SetupInputs"),
         )
-        return build_procedure_inputs(record_type, bindings)
+        try:
+            return build_procedure_inputs(record_type, bindings)
+        except (TypeError, ValueError) as error:
+            ProcedureExecutor._raise_binding_error(definition, "setup inputs", error)
 
     @staticmethod
     def _prepare_process_inputs(
@@ -133,7 +136,14 @@ class ProcedureExecutor:
             type[ProcedureInputs],
             getattr(definition.contract, "Inputs"),
         )
-        return build_procedure_inputs(record_type, supplied)
+        try:
+            return build_procedure_inputs(record_type, supplied)
+        except (TypeError, ValueError) as error:
+            ProcedureExecutor._raise_binding_error(
+                definition,
+                "processing inputs",
+                error,
+            )
 
     @staticmethod
     def _prepare_process_outputs(
@@ -144,7 +154,19 @@ class ProcedureExecutor:
             type[ProcedureOutputs],
             getattr(definition.contract, "Outputs"),
         )
-        return build_procedure_outputs(record_type, supplied)
+        try:
+            return build_procedure_outputs(record_type, supplied)
+        except (TypeError, ValueError) as error:
+            ProcedureExecutor._raise_binding_error(definition, "outputs", error)
+
+    @staticmethod
+    def _raise_binding_error(
+        definition: ProcedureDefinition[Any],
+        kind: str,
+        error: TypeError | ValueError,
+    ) -> Never:
+        message = f"invalid {kind} for procedure {definition.identifier}: {error}"
+        raise type(error)(message) from error
 
 
 __all__ = ["ProcedureExecutor"]

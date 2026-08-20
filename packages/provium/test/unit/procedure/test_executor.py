@@ -2,18 +2,37 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 import pytest
 
 from provium import (
+    Artifact,
+    ArtifactDefinition,
+    ArtifactHeader,
+    ArtifactLineage,
+    ArtifactReader,
+    ArtifactRecord,
+    ArtifactReference,
+    ArtifactWriter,
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
+    ProcedureExecutionRecord,
     ProcedureExecutionResult,
     ProcedureExecutor,
     ProcedureProcessContext,
+    ProcedureRecord,
     ProcedureSetupContext,
+    decode_header,
+    encode_header,
+    input,
+    optional_input,
+    output,
+    repeated_input,
 )
 
 
@@ -23,6 +42,50 @@ class Config(ProcedureConfig):
 
 class Contract(ProcedureContract[Config]):
     configuration = Config
+
+
+class BytesReader(ArtifactReader):
+    def read(self) -> bytes:
+        return self.body.read()
+
+
+class BytesWriter(ArtifactWriter):
+    def write(self, value: bytes) -> int:
+        return self.body.write(value)
+
+
+BYTES = ArtifactDefinition(
+    "example.ExecutorBytesV1",
+    f"{__name__}:BytesArtifact",
+    "Executor bytes.",
+)
+
+
+class BytesArtifact(Artifact[BytesReader, BytesWriter]):
+    definition = BYTES
+    reader = BytesReader
+    writer = BytesWriter
+
+
+def write_artifact(path: Path, identity: str, body: bytes) -> ArtifactRecord:
+    reference = ArtifactReference(identity, BYTES.identifier)
+    digest = hashlib.sha256(body).hexdigest()
+    execution = ProcedureExecutionRecord(
+        f"{identity}-execution",
+        ProcedureRecord("example.SourceV1", "source-contract"),
+        outputs=(reference,),
+    )
+    record = ArtifactRecord(reference, digest, execution.identity)
+    lineage = ArtifactLineage.for_execution(execution, (record,))
+    header = ArtifactHeader.create(
+        artifact_identifier=reference.artifact_identifier,
+        artifact_identity=reference.identity,
+        body_length=len(body),
+        body_digest=digest,
+        lineage=lineage,
+    )
+    path.write_bytes(encode_header(header) + body)
+    return record
 
 
 DEFINITION = ProcedureDefinition(
@@ -137,7 +200,13 @@ def test_prepare_validates_setup_bindings_before_instantiation(
         lambda self: ExecutorProcedure,
     )
 
-    with pytest.raises(TypeError, match="unknown field: unexpected"):
+    with pytest.raises(
+        TypeError,
+        match=(
+            "invalid setup inputs for procedure example.ExecutorV1: "
+            "unknown field: unexpected"
+        ),
+    ):
         ProcedureExecutor().prepare(
             DEFINITION,
             setup_inputs={"unexpected": object()},
@@ -302,7 +371,13 @@ def test_execute_closes_when_processing_bindings_are_invalid(
         lambda self: ExecutorProcedure,
     )
 
-    with pytest.raises(TypeError, match="unknown field: unexpected"):
+    with pytest.raises(
+        TypeError,
+        match=(
+            "invalid processing inputs for procedure example.ExecutorV1: "
+            "unknown field: unexpected"
+        ),
+    ):
         ProcedureExecutor().execute(
             DEFINITION,
             inputs={"unexpected": object()},
@@ -313,6 +388,102 @@ def test_execute_closes_when_processing_bindings_are_invalid(
     procedure = ExecutorProcedure.instances[0]
     assert procedure.process_inputs is None
     assert procedure.close_calls == 1
+
+
+def test_execute_contextualizes_invalid_output_bindings_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: ExecutorProcedure,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match=(
+            "invalid outputs for procedure example.ExecutorV1: "
+            "unknown field: unexpected"
+        ),
+    ):
+        ProcedureExecutor().execute(
+            DEFINITION,
+            inputs={},
+            outputs={"unexpected": object()},  # type: ignore[dict-item]
+        )
+
+    assert len(ExecutorProcedure.instances) == 1
+    assert ExecutorProcedure.instances[0].close_calls == 1
+
+
+def test_execute_rejects_duplicate_output_destinations_before_processing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class OutputContract(ProcedureContract[None]):
+        class Outputs(Contract.Outputs):
+            first = output(BYTES)
+            second = output(BYTES)
+
+    definition = ProcedureDefinition(
+        "example.DuplicateOutputsV1",
+        f"{__name__}:OutputProcedure",
+        "Duplicate outputs",
+        None,
+        OutputContract,
+    )
+    processed: list[bool] = []
+    closed: list[bool] = []
+
+    class OutputProcedure(
+        Procedure[
+            None,
+            OutputContract.SetupInputs,
+            OutputContract.Inputs,
+            OutputContract.Outputs,
+        ]
+    ):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: OutputContract.Inputs,
+            outputs: OutputContract.Outputs,
+        ) -> None:
+            processed.append(True)
+
+        def close(self) -> None:
+            closed.append(True)
+
+    OutputProcedure.definition = definition
+
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: OutputProcedure,
+    )
+    destination = tmp_path / "same.pa"
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "invalid outputs for procedure example.DuplicateOutputsV1: "
+            "fields first and second use the same destination"
+        ),
+    ):
+        ProcedureExecutor().execute(
+            definition,
+            inputs={},
+            outputs={
+                "first": BytesArtifact.bind_write(destination),
+                "second": BytesArtifact.bind_write(
+                    destination.parent / "." / "same.pa"
+                ),
+            },
+        )
+
+    assert processed == []
+    assert closed == [True]
 
 
 def test_execute_preserves_processing_error_when_close_also_fails(
@@ -343,3 +514,135 @@ def test_execute_preserves_processing_error_when_close_also_fails(
         ProcedureExecutor().execute(DEFINITION, inputs={}, outputs={})
 
     assert caught.value.__cause__ is close_error
+
+
+def test_executor_runs_complete_typed_artifact_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FullConfig(ProcedureConfig):
+        prefix: str = "default"
+
+    class FullContract(ProcedureContract[FullConfig]):
+        configuration = FullConfig
+
+        class SetupInputs(Contract.SetupInputs):
+            model = input(BYTES)
+
+        class Inputs(Contract.Inputs):
+            primary = input(BYTES)
+            optional = optional_input(BYTES)
+            extras = repeated_input(BYTES, minimum=2, maximum=2)
+
+        class Outputs(Contract.Outputs):
+            first = output(BYTES)
+            second = output(BYTES)
+
+    definition = ProcedureDefinition(
+        "example.FullExecutorV1",
+        f"{__name__}:FullProcedure",
+        "Full executor",
+        None,
+        FullContract,
+    )
+    instances: list[FullProcedure] = []
+
+    class FullProcedure(
+        Procedure[
+            FullConfig,
+            FullContract.SetupInputs,
+            FullContract.Inputs,
+            FullContract.Outputs,
+        ]
+    ):
+        def __init__(self) -> None:
+            self.model = b""
+            self.closed = False
+            instances.append(self)
+
+        def setup(
+            self,
+            context: ProcedureSetupContext,
+            configuration: FullConfig,
+            inputs: FullContract.SetupInputs,
+        ) -> None:
+            with inputs.model.open() as reader:
+                self.model = reader.read()
+
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: FullConfig,
+            inputs: FullContract.Inputs,
+            outputs: FullContract.Outputs,
+        ) -> None:
+            with inputs.primary.open() as reader:
+                primary = reader.read()
+            extras = []
+            for binding in inputs.extras:
+                with binding.open() as reader:
+                    extras.append(reader.read())
+            assert inputs.optional is None
+            body = b"|".join(
+                [configuration.prefix.encode(), self.model, primary, *extras]
+            )
+            outputs.first.open().write(body)
+            outputs.second.open().write(body.upper())
+
+        def close(self) -> None:
+            self.closed = True
+
+    FullProcedure.definition = definition
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: FullProcedure,
+    )
+    source_specs = (
+        ("model", b"model"),
+        ("primary", b"primary"),
+        ("extra-1", b"extra one"),
+        ("extra-2", b"extra two"),
+    )
+    records: dict[str, ArtifactRecord] = {}
+    paths: dict[str, Path] = {}
+    for identity, body in source_specs:
+        path = tmp_path / f"{identity}.pa"
+        paths[identity] = path
+        records[identity] = write_artifact(path, identity, body)
+    first_path = tmp_path / "first.pa"
+    second_path = tmp_path / "second.pa"
+
+    result = ProcedureExecutor().execute(
+        definition,
+        configuration_layers=({"prefix": "earlier"}, {"prefix": "final"}),
+        setup_inputs={"model": BytesArtifact.bind_read(paths["model"])},
+        inputs={
+            "primary": BytesArtifact.bind_read(paths["primary"]),
+            "extras": [
+                BytesArtifact.bind_read(paths["extra-2"]),
+                BytesArtifact.bind_read(paths["extra-1"]),
+            ],
+        },
+        outputs={
+            "first": BytesArtifact.bind_write(first_path),
+            "second": BytesArtifact.bind_write(second_path),
+        },
+    )
+
+    assert instances[0].closed
+    assert result.procedure is not None
+    assert result.procedure.config == {"prefix": "final"}
+    assert result.inputs == tuple(
+        records[name].reference for name in ("model", "primary", "extra-2", "extra-1")
+    )
+    assert tuple(result.outputs) == ("first", "second")
+    expected_bodies = {
+        first_path: b"final|model|primary|extra two|extra one",
+        second_path: b"FINAL|MODEL|PRIMARY|EXTRA TWO|EXTRA ONE",
+    }
+    for path, expected_body in expected_bodies.items():
+        data = path.read_bytes()
+        header = decode_header(data)
+        assert data[header.body_offset :] == expected_body
+        assert header.lineage == result.lineage

@@ -31,6 +31,7 @@ from provium import (
     encode_header,
     input,
     optional_input,
+    optional_output,
     output,
     repeated_input,
     session,
@@ -244,6 +245,69 @@ def test_unregistered_procedure_cannot_produce_an_artifact(tmp_path: Path) -> No
                 {"result": BytesArtifact.bind_write(tmp_path / "result.pa")}
             ),
         )
+
+
+def test_prepared_rejects_duplicate_destinations_with_field_context(
+    tmp_path: Path,
+) -> None:
+    class TwoOutputContract(ProcedureContract[None]):
+        class Outputs(ProcedureOutputs):
+            first = output(BYTES)
+            second = output(BYTES)
+            omitted = optional_output(BYTES)
+
+    definition = ProcedureDefinition(
+        "example.PreparedDuplicatesV1",
+        f"{__name__}:TwoOutputProcedure",
+        "Two outputs",
+        None,
+        TwoOutputContract,
+    )
+    processed: list[bool] = []
+
+    class TwoOutputProcedure(
+        Procedure[
+            None,
+            TwoOutputContract.SetupInputs,
+            TwoOutputContract.Inputs,
+            TwoOutputContract.Outputs,
+        ]
+    ):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: TwoOutputContract.Inputs,
+            outputs: TwoOutputContract.Outputs,
+        ) -> None:
+            processed.append(True)
+
+    TwoOutputProcedure.definition = definition
+    destination = tmp_path / "same.pa"
+    prepared = PreparedProcedure(
+        TwoOutputProcedure(),
+        None,
+        TwoOutputContract.SetupInputs._from_bindings({}),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "invalid outputs for procedure example.PreparedDuplicatesV1: "
+            "fields first and second use the same destination"
+        ),
+    ):
+        prepared.execute(
+            inputs=TwoOutputContract.Inputs._from_bindings({}),
+            outputs=TwoOutputContract.Outputs._from_bindings(
+                {
+                    "first": BytesArtifact.bind_write(destination),
+                    "second": BytesArtifact.bind_write(destination),
+                }
+            ),
+        )
+
+    assert processed == []
 
 
 def test_prepared_execution_records_canonical_configuration(tmp_path: Path) -> None:

@@ -1,5 +1,6 @@
 """Reusable prepared procedure instances."""
 
+from pathlib import Path
 from threading import Lock
 from typing import Any, Never, cast
 from uuid import uuid4
@@ -102,7 +103,9 @@ class PreparedProcedure[
         input_bindings: tuple[ArtifactReadBinding[Any], ...],
         output_bindings: dict[str, ArtifactWriteBinding[Any]],
     ) -> ProcedureExecutionResult:
-        with ProcedureExecutionSession(self._procedure_record()) as execution:
+        procedure = self._procedure_record()
+        self._validate_output_destinations(output_bindings, procedure.name)
+        with ProcedureExecutionSession(procedure) as execution:
             with authorize_bindings(input_bindings, {}, {}):
                 identities = self._register_inputs(input_bindings)
             writers = execution.stage_outputs(output_bindings)
@@ -154,16 +157,32 @@ class PreparedProcedure[
                 bindings.append(cast(ArtifactReadBinding[Any], value))
         return tuple(bindings)
 
-    @staticmethod
     def _output_bindings(
+        self,
         outputs: ProcedureOutputs,
     ) -> dict[str, ArtifactWriteBinding[Any]]:
         values = cast(dict[str, object], object.__getattribute__(outputs, "_values"))
-        return {
-            name: value
-            for name, value in values.items()
-            if isinstance(value, ArtifactWriteBinding)
-        }
+        bindings: dict[str, ArtifactWriteBinding[Any]] = {}
+        for name, value in values.items():
+            if isinstance(value, ArtifactWriteBinding):
+                bindings[name] = cast(ArtifactWriteBinding[Any], value)
+        return bindings
+
+    def _validate_output_destinations(
+        self,
+        bindings: dict[str, ArtifactWriteBinding[Any]],
+        procedure_identifier: str,
+    ) -> None:
+        fields_by_destination: dict[Path, str] = {}
+        for name, binding in bindings.items():
+            destination = binding.path.resolve()
+            conflicting_name = fields_by_destination.get(destination)
+            if conflicting_name is not None:
+                raise ValueError(
+                    f"invalid outputs for procedure {procedure_identifier}: "
+                    f"fields {conflicting_name} and {name} use the same destination"
+                )
+            fields_by_destination[destination] = name
 
     @staticmethod
     def _register_inputs(
