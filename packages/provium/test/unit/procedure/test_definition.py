@@ -740,6 +740,201 @@ def test_procedure_definition_resolution_is_thread_safe(
     assert imports == ["example.procedures"]
 
 
+def test_procedure_resolution_validates_each_unique_contract_artifact_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ArtifactContract(ProcedureContract[None]):
+        configuration = None
+
+        class SetupInputs(ProcedureInputs):
+            setup = input(EXAMPLE_ARTIFACT)
+
+        class Inputs(ProcedureInputs):
+            first = input(EXAMPLE_ARTIFACT)
+            second = input(EXAMPLE_ARTIFACT)
+
+        class Outputs(ProcedureOutputs):
+            result = output(EXAMPLE_ARTIFACT)
+
+    definition = ProcedureDefinition(
+        "example.ArtifactsV1",
+        "example.procedures:value",
+        "Artifacts",
+        None,
+        ArtifactContract,
+    )
+
+    class Target(
+        Procedure[
+            None,
+            ArtifactContract.SetupInputs,
+            ArtifactContract.Inputs,
+            ArtifactContract.Outputs,
+        ]
+    ):
+        pass
+
+    Target.definition = definition
+    resolutions: list[ArtifactDefinition[ExampleArtifact]] = []
+
+    def resolve(
+        artifact: ArtifactDefinition[ExampleArtifact],
+    ) -> type[ExampleArtifact]:
+        resolutions.append(artifact)
+        return ExampleArtifact
+
+    monkeypatch.setattr(ArtifactDefinition, "resolve", resolve)
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=Target),
+    )
+
+    assert definition.resolve() is Target
+    assert resolutions == [EXAMPLE_ARTIFACT]
+
+
+def test_procedure_resolution_rejects_a_nonartifact_contract_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ArtifactContract(ProcedureContract[None]):
+        configuration = None
+
+        class Inputs(ProcedureInputs):
+            value = input(EXAMPLE_ARTIFACT)
+
+    definition = ProcedureDefinition(
+        "example.ArtifactsV1",
+        "example.procedures:value",
+        "Artifacts",
+        None,
+        ArtifactContract,
+    )
+
+    class Target(
+        Procedure[
+            None,
+            ArtifactContract.SetupInputs,
+            ArtifactContract.Inputs,
+            ArtifactContract.Outputs,
+        ]
+    ):
+        pass
+
+    Target.definition = definition
+    monkeypatch.setattr(ArtifactDefinition, "resolve", lambda self: object())
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=Target),
+    )
+
+    with pytest.raises(TypeError, match="example.ExampleArtifactV1.*Artifact class"):
+        definition.resolve()
+
+
+def test_procedure_resolution_rejects_mismatched_artifact_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ArtifactContract(ProcedureContract[None]):
+        configuration = None
+
+        class Inputs(ProcedureInputs):
+            value = input(EXAMPLE_ARTIFACT)
+
+    definition = ProcedureDefinition(
+        "example.ArtifactsV1",
+        "example.procedures:value",
+        "Artifacts",
+        None,
+        ArtifactContract,
+    )
+
+    class Target(
+        Procedure[
+            None,
+            ArtifactContract.SetupInputs,
+            ArtifactContract.Inputs,
+            ArtifactContract.Outputs,
+        ]
+    ):
+        pass
+
+    class OtherArtifact(Artifact[Reader, Writer]):
+        definition = ArtifactDefinition(
+            "example.OtherArtifactV1",
+            "example.artifacts:OtherArtifact",
+            "Another artifact.",
+        )
+        reader = Reader
+        writer = Writer
+
+    Target.definition = definition
+    monkeypatch.setattr(
+        ArtifactDefinition,
+        "resolve",
+        lambda self: OtherArtifact,
+    )
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=Target),
+    )
+
+    with pytest.raises(ValueError, match="mismatched definition metadata"):
+        definition.resolve()
+
+
+def test_procedure_resolution_validates_distinct_equivalent_definitions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class InvalidDefinition(ArtifactDefinition[ExampleArtifact]):
+        def resolve(self) -> type[ExampleArtifact]:
+            return object()  # type: ignore[return-value]
+
+    invalid_definition = InvalidDefinition(
+        EXAMPLE_ARTIFACT.identifier,
+        EXAMPLE_ARTIFACT.target,
+        EXAMPLE_ARTIFACT.description,
+    )
+
+    class ArtifactContract(ProcedureContract[None]):
+        configuration = None
+
+        class Inputs(ProcedureInputs):
+            valid = input(EXAMPLE_ARTIFACT)
+            invalid = input(invalid_definition)
+
+    definition = ProcedureDefinition(
+        "example.ArtifactsV1",
+        "example.procedures:value",
+        "Artifacts",
+        None,
+        ArtifactContract,
+    )
+
+    class Target(
+        Procedure[
+            None,
+            ArtifactContract.SetupInputs,
+            ArtifactContract.Inputs,
+            ArtifactContract.Outputs,
+        ]
+    ):
+        pass
+
+    Target.definition = definition
+    monkeypatch.setattr(
+        ArtifactDefinition,
+        "resolve",
+        lambda self: ExampleArtifact,
+    )
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=Target),
+    )
+
+    with pytest.raises(TypeError, match="must be an Artifact class"):
+        definition.resolve()
+
+
 def test_resolution_rechecks_the_cache_after_acquiring_the_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -11,6 +11,9 @@ from shlex import quote
 from threading import RLock, local
 from typing import Any, ClassVar, Literal, cast, get_args, get_origin
 
+from provium.artifact import ArtifactDefinition
+from provium.artifact.binding import validate_artifact_class
+
 from .config import ProcedureConfig
 from .io import ProcedureInputs, ProcedureIOField, ProcedureOutputs
 
@@ -403,6 +406,7 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 resolved_class = cast(type[Procedure[Any, Any, Any, Any]], resolved)
                 self._validate_resolved_definition(resolved_class)
                 self._validate_resolved_specialization(resolved_class)
+                self._validate_contract_artifacts()
                 object.__setattr__(self, "_resolved_class", resolved_class)
                 return cast(type[ProcedureT], resolved_class)
             finally:
@@ -470,6 +474,42 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 f"procedure {self.identifier} generic specialization does not match "
                 "its contract"
             )
+
+    def _validate_contract_artifacts(self) -> None:
+        definitions = self._contract_artifact_definitions()
+        for definition in definitions.values():
+            resolved = definition.resolve()
+            try:
+                artifact_class = validate_artifact_class(resolved)
+            except TypeError as error:
+                raise TypeError(
+                    f"artifact {definition.identifier} resolved for procedure "
+                    f"{self.identifier} is invalid: {error}"
+                ) from error
+            resolved_definition = artifact_class.definition
+            if (
+                resolved_definition.identifier != definition.identifier
+                or resolved_definition.target != definition.target
+            ):
+                raise ValueError(
+                    f"artifact {definition.identifier} resolved for procedure "
+                    f"{self.identifier} with mismatched definition metadata"
+                )
+
+    def _contract_artifact_definitions(
+        self,
+    ) -> dict[int, ArtifactDefinition[Any]]:
+        definitions: dict[int, ArtifactDefinition[Any]] = {}
+        records = (
+            self.contract.SetupInputs,
+            self.contract.Inputs,
+            self.contract.Outputs,
+        )
+        for record in records:
+            for io_field in record.fields.values():
+                definition = io_field.artifact
+                definitions.setdefault(id(definition), definition)
+        return definitions
 
 
 __all__ = [

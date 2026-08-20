@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from .definition import Artifact
 
 
-def _validate_binding(artifact: object, path: object) -> Path:
+def validate_artifact_class(artifact: object) -> type[Artifact[Any, Any]]:
+    """Validate and return one concrete class-based artifact implementation."""
     from .definition import Artifact, ArtifactDefinition
 
     if not isinstance(artifact, type) or not issubclass(artifact, Artifact):
@@ -62,6 +63,11 @@ def _validate_binding(artifact: object, path: object) -> Path:
     load = getattr(artifact_class, "load", None)
     if load is not None and not callable(load):
         raise TypeError("artifact binding artifact load must be callable or None")
+    return cast(type[Artifact[Any, Any]], artifact)
+
+
+def _validate_binding(artifact: object, path: object) -> Path:
+    validate_artifact_class(artifact)
     if not isinstance(path, (str, PathLike)):
         raise TypeError("artifact binding path must be a string or path-like object")
     return Path(cast(str | PathLike[str], path))
@@ -91,4 +97,8 @@ class ArtifactWriteBinding[WriterT: ArtifactWriter]:
         object.__setattr__(self, "path", normalized)
 
 
-__all__ = ["ArtifactReadBinding", "ArtifactWriteBinding"]
+__all__ = [
+    "ArtifactReadBinding",
+    "ArtifactWriteBinding",
+    "validate_artifact_class",
+]
