@@ -44,7 +44,7 @@ DETECT = ProcedureDefinition(
     "example_plugin.procedures:Detect",
     "Detect objects",
     "Run a model over an image.",
-    DetectContract,
+    "example_plugin.contracts:DetectContract",
 )
 
 class Detect(Procedure[

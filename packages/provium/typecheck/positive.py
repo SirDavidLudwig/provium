@@ -134,7 +134,7 @@ DETECT_PROCEDURE: ProcedureDefinition[DetectProcedure] = ProcedureDefinition(
     target="example.procedures:DetectProcedure",
     label="Detect",
     description="Detect objects.",
-    contract=Contract,
+    contract="example.contracts:Contract",
 )
 
 DetectProcedure.definition = DETECT_PROCEDURE

@@ -22,7 +22,11 @@ def test_procedure_and_definition_preserve_their_generic_types() -> None:
     assert setup_inputs is not inputs
     assert inputs is not outputs
     assert procedure_type.__bound__ == Procedure[Any, Any, Any, Any]
-    assert definition_annotations["contract"] == type[ProcedureContract[Any]]
+    assert definition_annotations["contract"] == str | type[ProcedureContract[Any]]
+    assert (
+        get_type_hints(ProcedureDefinition.resolve_contract)["return"]
+        == type[ProcedureContract[Any]]
+    )
     assert resolve_annotations["return"] == type[procedure_type]
 
 

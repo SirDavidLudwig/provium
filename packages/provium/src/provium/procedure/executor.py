@@ -104,7 +104,7 @@ class ProcedureExecutor:
         values = compose_configuration(layers)
         configuration_type = cast(
             type[ProcedureConfig] | None,
-            getattr(definition.contract, "configuration"),
+            getattr(definition.resolve_contract(), "configuration"),
         )
         if configuration_type is None:
             if values:
@@ -125,7 +125,7 @@ class ProcedureExecutor:
     ) -> ProcedureInputs:
         record_type = cast(
             type[ProcedureInputs],
-            getattr(definition.contract, "SetupInputs"),
+            getattr(definition.resolve_contract(), "SetupInputs"),
         )
         if isinstance(supplied, record_type):
             return supplied
@@ -146,7 +146,7 @@ class ProcedureExecutor:
     ) -> ProcedureInputs:
         record_type = cast(
             type[ProcedureInputs],
-            getattr(definition.contract, "Inputs"),
+            getattr(definition.resolve_contract(), "Inputs"),
         )
         if isinstance(supplied, record_type):
             return supplied
@@ -168,7 +168,7 @@ class ProcedureExecutor:
     ) -> ProcedureOutputs:
         record_type = cast(
             type[ProcedureOutputs],
-            getattr(definition.contract, "Outputs"),
+            getattr(definition.resolve_contract(), "Outputs"),
         )
         if isinstance(supplied, record_type):
             return supplied

@@ -3,6 +3,7 @@ import pickle
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -115,11 +116,105 @@ def test_procedure_definition_exposes_lightweight_metadata() -> None:
     assert EXAMPLE_DEFINITION.contract is Contract
 
 
+def test_procedure_definition_accepts_a_lazy_contract_reference() -> None:
+    definition = ProcedureDefinition(
+        "example.LazyContractV1",
+        "example.procedures:LazyProcedure",
+        "Lazy",
+        None,
+        "example.contracts:Contract",
+    )
+
+    assert definition.contract == "example.contracts:Contract"
+
+
+def test_procedure_definition_resolves_and_caches_a_lazy_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    imports: list[str] = []
+
+    def import_module(name: str) -> object:
+        imports.append(name)
+        return SimpleNamespace(nested=SimpleNamespace(Contract=Contract))
+
+    monkeypatch.setattr("provium.procedure.definition.import_module", import_module)
+    definition = ProcedureDefinition(
+        "example.LazyContractV1",
+        "example.procedures:LazyProcedure",
+        "Lazy",
+        None,
+        "example.contracts:nested.Contract",
+    )
+
+    assert imports == []
+    assert definition.resolve_contract() is Contract
+    assert definition.resolve_contract() is Contract
+    assert imports == ["example.contracts"]
+
+
+@pytest.mark.parametrize(
+    "contract",
+    [
+        "example.contracts",
+        ":Contract",
+        "example.contracts:",
+        "example..contracts:Contract",
+        "example.contracts:Contract:Nested",
+    ],
+)
+def test_procedure_definition_rejects_malformed_contract_references(
+    contract: str,
+) -> None:
+    with pytest.raises(ValueError, match="contract.*module:attribute"):
+        ProcedureDefinition(
+            "example.LazyContractV1",
+            "example.procedures:LazyProcedure",
+            "Lazy",
+            None,
+            contract,
+        )
+
+
+def test_lazy_contract_reference_must_resolve_to_a_compiled_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(Contract=object),
+    )
+    definition = ProcedureDefinition(
+        "example.LazyContractV1",
+        "example.procedures:LazyProcedure",
+        "Lazy",
+        None,
+        "example.contracts:Contract",
+    )
+
+    with pytest.raises(TypeError, match="concrete compiled ProcedureContract"):
+        definition.resolve_contract()
+
+
 def test_procedure_definition_can_cross_process_serialization_boundaries() -> None:
     restored = pickle.loads(pickle.dumps(EXAMPLE_DEFINITION))
 
     assert restored == EXAMPLE_DEFINITION
     assert restored.contract is Contract
+
+
+def test_lazy_contract_reference_survives_serialization_without_resolution() -> None:
+    definition = ProcedureDefinition(
+        "example.LazyContractV1",
+        "example.procedures:LazyProcedure",
+        "Lazy",
+        None,
+        "example.contracts:Contract",
+    )
+
+    restored = pickle.loads(pickle.dumps(definition))
+
+    assert restored == definition
+    assert restored.contract == "example.contracts:Contract"
+    assert restored._resolved_contract is None
 
 
 def test_procedure_definition_builds_an_ordered_invocation_synopsis() -> None:
@@ -793,6 +888,83 @@ def test_procedure_definition_detects_recursive_resolution(
 
     with pytest.raises(RuntimeError, match="recursive procedure resolution"):
         definition.resolve()
+
+
+def test_procedure_definition_detects_recursive_contract_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        "example.contracts:Contract",
+    )
+
+    def import_module(name: str) -> object:
+        definition.resolve_contract()
+        raise AssertionError("recursive resolution should fail first")
+
+    monkeypatch.setattr("provium.procedure.definition.import_module", import_module)
+
+    with pytest.raises(RuntimeError, match="recursive contract resolution"):
+        definition.resolve_contract()
+
+
+def test_procedure_contract_resolution_is_thread_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        "example.contracts:Contract",
+    )
+    barrier = Barrier(4)
+    imports: list[str] = []
+
+    def import_module(name: str) -> object:
+        imports.append(name)
+        return SimpleNamespace(Contract=Contract)
+
+    def resolve() -> type[ProcedureContract[Any]]:
+        barrier.wait()
+        return definition.resolve_contract()
+
+    monkeypatch.setattr("provium.procedure.definition.import_module", import_module)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        resolved = list(executor.map(lambda _: resolve(), range(4)))
+
+    assert resolved == [Contract] * 4
+    assert imports == ["example.contracts"]
+
+
+def test_contract_resolution_rechecks_cache_after_acquiring_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        "example.contracts:Contract",
+    )
+
+    class CacheOnEnter:
+        def __enter__(self) -> None:
+            object.__setattr__(definition, "_resolved_contract", Contract)
+
+        def __exit__(self, *errors: object) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "provium.procedure.definition._PROCEDURE_RESOLUTION_LOCK",
+        CacheOnEnter(),
+    )
+
+    assert definition.resolve_contract() is Contract
 
 
 def test_equivalent_definitions_detect_recursive_target_resolution(

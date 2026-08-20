@@ -72,17 +72,16 @@ class ProcedureCommand(Command):
     @staticmethod
     def _show(arguments: argparse.Namespace) -> int:
         definition = _definition(arguments.identifier)
+        contract = definition.resolve_contract()
         print(f"{definition.label} ({definition.identifier})")
         if definition.description is not None:
             print(definition.description)
         print("\nInvocation:")
         print(definition.invocation_synopsis)
-        ProcedureCommand._print_fields(
-            "Setup inputs", definition.contract.metadata.setup_inputs
-        )
-        ProcedureCommand._print_fields("Inputs", definition.contract.metadata.inputs)
-        ProcedureCommand._print_fields("Outputs", definition.contract.metadata.outputs)
-        schema = definition.contract.metadata.configuration_schema
+        ProcedureCommand._print_fields("Setup inputs", contract.metadata.setup_inputs)
+        ProcedureCommand._print_fields("Inputs", contract.metadata.inputs)
+        ProcedureCommand._print_fields("Outputs", contract.metadata.outputs)
+        schema = contract.metadata.configuration_schema
         if schema is not None:
             print("\nConfiguration:")
             print(json.dumps(schema, indent=2, sort_keys=True))
@@ -124,17 +123,18 @@ class ExecuteCommand(Command):
     def execute(self, arguments: argparse.Namespace) -> int:
         try:
             definition = _definition(arguments.identifier)
+            contract = definition.resolve_contract()
             layers = tuple(self._load_configuration(path) for path in arguments.config)
             setup_inputs = self._read_bindings(
-                definition.contract.SetupInputs.fields,
+                contract.SetupInputs.fields,
                 arguments.setup_input,
             )
             inputs = self._read_bindings(
-                definition.contract.Inputs.fields,
+                contract.Inputs.fields,
                 arguments.input,
             )
             outputs = self._write_bindings(
-                definition.contract.Outputs.fields,
+                contract.Outputs.fields,
                 arguments.output,
             )
             result = ProcedureExecutor().execute(

@@ -126,7 +126,7 @@ class PreparedProcedure[
         try:
             return cast(
                 InputsT,
-                build_procedure_inputs(definition.contract.Inputs, supplied),
+                build_procedure_inputs(definition.resolve_contract().Inputs, supplied),
             )
         except (TypeError, ValueError) as error:
             raise type(error)(
@@ -144,7 +144,10 @@ class PreparedProcedure[
         try:
             return cast(
                 OutputsT,
-                build_procedure_outputs(definition.contract.Outputs, supplied),
+                build_procedure_outputs(
+                    definition.resolve_contract().Outputs,
+                    supplied,
+                ),
             )
         except (TypeError, ValueError) as error:
             raise type(error)(
@@ -295,12 +298,12 @@ class PreparedProcedure[
         if self._configuration is None:
             return ProcedureRecord(
                 definition.identifier,
-                definition.contract.metadata.digest,
+                definition.resolve_contract().metadata.digest,
             )
         snapshot = ConfigurationSnapshot.from_configuration(self._configuration)
         return ProcedureRecord(
             definition.identifier,
-            definition.contract.metadata.digest,
+            definition.resolve_contract().metadata.digest,
             snapshot.value,
             "pydantic-v2",
         )

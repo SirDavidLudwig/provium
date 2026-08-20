@@ -45,9 +45,11 @@ _CONTRACT_COMPILATION_HOOKS = frozenset(
 
 class _ResolutionState(local):
     targets: set[str]
+    contracts: set[str]
 
     def __init__(self) -> None:
         self.targets = set()
+        self.contracts = set()
 
 
 _PROCEDURE_RESOLUTION_LOCK = RLock()
@@ -355,8 +357,14 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
     target: str
     label: str
     description: str | None
-    contract: type[ProcedureContract[Any]]
+    contract: str | type[ProcedureContract[Any]]
     _resolved_class: type[Procedure[Any, Any, Any, Any]] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _resolved_contract: type[ProcedureContract[Any]] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -369,19 +377,16 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
         _require_text(self.label, "procedure definition label")
         if self.description is not None:
             _require_text(self.description, "procedure definition description")
-        if (
-            not isinstance(self.contract, type)
-            or not issubclass(self.contract, ProcedureContract)
-            or not isinstance(
-                getattr(self.contract, "metadata", None), ProcedureContractMetadata
-            )
-        ):
-            raise TypeError(
-                "procedure definition contract must be a concrete compiled "
-                "ProcedureContract class"
-            )
+        if isinstance(self.contract, str):
+            self._validate_reference(self.contract, "contract")
+        else:
+            self._validate_contract_class(self.contract)
 
-        module_name, separator, attribute_path = self.target.partition(":")
+        self._validate_reference(self.target, "target")
+
+    @staticmethod
+    def _validate_reference(reference: str, field_name: str) -> None:
+        module_name, separator, attribute_path = reference.partition(":")
         if (
             not separator
             or not _is_dotted_identifier(module_name)
@@ -389,7 +394,22 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
             or ":" in attribute_path
         ):
             raise ValueError(
-                "procedure definition target must use 'module:attribute' syntax"
+                f"procedure definition {field_name} must use 'module:attribute' syntax"
+            )
+
+    @staticmethod
+    def _validate_contract_class(contract: object) -> None:
+        if (
+            not isinstance(contract, type)
+            or not issubclass(contract, ProcedureContract)
+            or not isinstance(
+                getattr(cast(type[Any], contract), "metadata", None),
+                ProcedureContractMetadata,
+            )
+        ):
+            raise TypeError(
+                "procedure definition contract must be a concrete compiled "
+                "ProcedureContract class"
             )
 
     def __reduce__(self) -> tuple[object, tuple[object, ...]]:
@@ -409,8 +429,31 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
     def invocation_synopsis(self) -> str:
         """Return a direct-execution synopsis without resolving implementations."""
         lines = [f"provium execute {quote(self.identifier)}"]
-        lines.extend(_invocation_arguments(self.contract.metadata))
+        lines.extend(_invocation_arguments(self.resolve_contract().metadata))
         return " \\\n  ".join(lines)
+
+    def resolve_contract(self) -> type[ProcedureContract[Any]]:
+        """Import, validate, and cache the procedure contract when needed."""
+        if not isinstance(self.contract, str):
+            return self.contract
+        if self._resolved_contract is not None:
+            return self._resolved_contract
+        with _PROCEDURE_RESOLUTION_LOCK:
+            if self._resolved_contract is not None:
+                return self._resolved_contract
+            if self.contract in _PROCEDURE_RESOLUTION_STATE.contracts:
+                raise RuntimeError(
+                    f"recursive contract resolution for {self.identifier}"
+                )
+            _PROCEDURE_RESOLUTION_STATE.contracts.add(self.contract)
+            try:
+                resolved = self._import_reference(self.contract)
+                self._validate_contract_class(resolved)
+                resolved_contract = cast(type[ProcedureContract[Any]], resolved)
+                object.__setattr__(self, "_resolved_contract", resolved_contract)
+                return resolved_contract
+            finally:
+                _PROCEDURE_RESOLUTION_STATE.contracts.remove(self.contract)
 
     def resolve(self) -> type[ProcedureT]:
         """Import and return the procedure class described by this definition."""
@@ -439,7 +482,11 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 _PROCEDURE_RESOLUTION_STATE.targets.remove(self.target)
 
     def _import_target(self) -> object:
-        module_name, _, attribute_path = self.target.partition(":")
+        return self._import_reference(self.target)
+
+    @staticmethod
+    def _import_reference(reference: str) -> object:
+        module_name, _, attribute_path = reference.partition(":")
         resolved: object = import_module(module_name)
         for component in attribute_path.split("."):
             resolved = getattr(resolved, component)
@@ -462,8 +509,10 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 f"procedure {self.identifier} must declare a ProcedureDefinition"
             )
         definition = cast(ProcedureDefinition[Any], resolved_definition)
+        contract = self.resolve_contract()
+        resolved_contract = definition.resolve_contract()
         if (
-            definition.contract.metadata.digest != self.contract.metadata.digest
+            resolved_contract.metadata.digest != contract.metadata.digest
             or definition.identifier != self.identifier
             or definition.target != self.target
         ):
@@ -485,15 +534,16 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                         isinstance(argument, type) for argument in arguments
                     ):
                         specializations.add(cast(tuple[type[object], ...], arguments))
+        contract = self.resolve_contract()
         configuration = cast(
             type[ProcedureConfig] | None,
-            getattr(self.contract, "configuration"),
+            getattr(contract, "configuration"),
         )
         expected = (
             type(None) if configuration is None else configuration,
-            self.contract.SetupInputs,
-            self.contract.Inputs,
-            self.contract.Outputs,
+            contract.SetupInputs,
+            contract.Inputs,
+            contract.Outputs,
         )
         if specializations != {expected}:
             raise TypeError(
@@ -562,11 +612,8 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
         self,
     ) -> dict[int, ArtifactDefinition[Any]]:
         definitions: dict[int, ArtifactDefinition[Any]] = {}
-        records = (
-            self.contract.SetupInputs,
-            self.contract.Inputs,
-            self.contract.Outputs,
-        )
+        contract = self.resolve_contract()
+        records = (contract.SetupInputs, contract.Inputs, contract.Outputs)
         for record in records:
             for io_field in record.fields.values():
                 definition = io_field.artifact
