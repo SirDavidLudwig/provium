@@ -6,7 +6,9 @@ from provium import (
     Artifact,
     ArtifactCatalog,
     ArtifactDefinition,
+    ArtifactReadBinding,
     ArtifactReader,
+    ArtifactWriteBinding,
     ArtifactWriter,
 )
 
@@ -21,6 +23,17 @@ def test_artifact_metadata_retains_its_generic_reader_and_writer_types() -> None
     assert annotations["writer"] == type[writer_type]
     assert annotations["dump"] == Callable[[reader_type, Path], None] | None
     assert annotations["load"] == Callable[[Path, writer_type], None] | None
+
+    read_annotations = get_type_hints(
+        Artifact.bind_read,
+        localns={"ReaderT": reader_type, "WriterT": writer_type},
+    )
+    write_annotations = get_type_hints(
+        Artifact.bind_write,
+        localns={"ReaderT": reader_type, "WriterT": writer_type},
+    )
+    assert read_annotations["return"] == ArtifactReadBinding[reader_type]
+    assert write_annotations["return"] == ArtifactWriteBinding[writer_type]
 
 
 def test_artifact_definition_preserves_its_concrete_artifact_type() -> None:

@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
+from os import PathLike
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
+from .binding import ArtifactReadBinding, ArtifactWriteBinding
 from .reader import ArtifactReader
 from .writer import ArtifactWriter
 
@@ -31,6 +33,16 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
     writer: type[WriterT]
     dump: Callable[[ReaderT, Path], None] | None = None
     load: Callable[[Path, WriterT], None] | None = None
+
+    @classmethod
+    def bind_read(cls, path: str | PathLike[str]) -> ArtifactReadBinding[ReaderT]:
+        """Bind this artifact's reader type to a normalized path."""
+        return ArtifactReadBinding(cls, Path(path))
+
+    @classmethod
+    def bind_write(cls, path: str | PathLike[str]) -> ArtifactWriteBinding[WriterT]:
+        """Bind this artifact's writer type to a normalized path."""
+        return ArtifactWriteBinding(cls, Path(path))
 
 
 @dataclass(frozen=True, slots=True)
