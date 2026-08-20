@@ -1,8 +1,8 @@
 site_name: Provium
 site_description: Typed artifacts with automatic provenance
-site_url: https://sirdavidludwig.github.io/provium/
-repo_url: https://github.com/SirDavidLudwig/provium
-repo_name: SirDavidLudwig/provium
+site_url: https://project-provium.github.io/provium/
+repo_url: https://github.com/Project-Provium/provium
+repo_name: Project-Provium/provium
 
 theme:
   name: material

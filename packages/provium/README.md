@@ -6,7 +6,7 @@
 
 [Documentation](https://provium.dlii.tech) ·
 [PyPI](https://pypi.org/project/provium/) ·
-[Issues](https://github.com/SirDavidLudwig/provium/issues)
+[Issues](https://github.com/Project-Provium/provium/issues)
 
 Provium helps you build processing workflows whose results explain where they
 came from. Store a result as an artifact, use that artifact as input to another
