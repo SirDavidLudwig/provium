@@ -51,8 +51,10 @@ def test_artifact_can_define_custom_dump_and_load_class_methods() -> None:
         def load(cls, source: Path, writer: Writer) -> None:
             calls.append(("load", writer, source))
 
-    reader = Reader()
-    writer = Writer()
+    # Transfer callbacks only require correctly typed instances; construction and
+    # resource ownership are covered by the dedicated reader and writer tests.
+    reader = object.__new__(Reader)
+    writer = object.__new__(Writer)
 
     TransferArtifact.dump(reader, Path("dump"))
     TransferArtifact.load(Path("dump"), writer)
