@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 from .reader import ArtifactReader
 from .writer import ArtifactWriter
@@ -23,8 +23,18 @@ def _is_dotted_identifier(value: str) -> bool:
     return all(component.isidentifier() for component in value.split("."))
 
 
+class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
+    """An artifact implementation with specialized reader and writer types."""
+
+    definition: ClassVar[ArtifactDefinition[Any]]
+    reader: type[ReaderT]
+    writer: type[WriterT]
+    dump: Callable[[ReaderT, Path], None] | None = None
+    load: Callable[[Path, WriterT], None] | None = None
+
+
 @dataclass(frozen=True, slots=True)
-class ArtifactDefinition:
+class ArtifactDefinition[ArtifactT: Artifact[Any, Any]]:
     """Describe an artifact implementation without importing it eagerly."""
 
     identifier: str
@@ -47,7 +57,7 @@ class ArtifactDefinition:
                 "artifact definition target must use 'module:attribute' syntax"
             )
 
-    def resolve(self) -> type[Artifact]:
+    def resolve(self) -> type[ArtifactT]:
         """Import and return the artifact class described by this definition."""
         module_name, _, attribute_path = self.target.partition(":")
         resolved: object = import_module(module_name)
@@ -61,17 +71,7 @@ class ArtifactDefinition:
             raise ValueError(
                 "resolved artifact definition identifier and target do not match"
             )
-        return cast(type[Artifact], resolved)
-
-
-class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
-    """An artifact implementation with specialized reader and writer types."""
-
-    definition: ClassVar[ArtifactDefinition]
-    reader: type[ReaderT]
-    writer: type[WriterT]
-    dump: Callable[[ReaderT, Path], None] | None = None
-    load: Callable[[Path, WriterT], None] | None = None
+        return cast(type[ArtifactT], resolved)
 
 
 __all__ = ["Artifact", "ArtifactDefinition"]

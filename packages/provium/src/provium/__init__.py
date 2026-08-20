@@ -11,6 +11,16 @@ from .artifact import (
     discover_artifact_catalogs,
     reset_artifact_discovery,
 )
+from .procedure import (
+    Procedure,
+    ProcedureCatalog,
+    ProcedureContract,
+    ProcedureDefinition,
+    ProcedureInputs,
+    ProcedureOutputs,
+    discover_procedure_catalogs,
+    reset_procedure_discovery,
+)
 
 __version__ = version("provium")
 
@@ -20,7 +30,15 @@ __all__ = [
     "ArtifactDefinition",
     "ArtifactReader",
     "ArtifactWriter",
+    "Procedure",
+    "ProcedureCatalog",
+    "ProcedureContract",
+    "ProcedureDefinition",
+    "ProcedureInputs",
+    "ProcedureOutputs",
     "__version__",
     "discover_artifact_catalogs",
+    "discover_procedure_catalogs",
     "reset_artifact_discovery",
+    "reset_procedure_discovery",
 ]

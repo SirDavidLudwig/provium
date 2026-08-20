@@ -2,8 +2,9 @@
 
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Any
 
-from .definition import ArtifactDefinition
+from .definition import Artifact, ArtifactDefinition
 
 
 class ArtifactCatalog:
@@ -12,7 +13,10 @@ class ArtifactCatalog:
     def __init__(self) -> None:
         self._definitions: dict[str, ArtifactDefinition] = {}
 
-    def register(self, definition: ArtifactDefinition) -> ArtifactDefinition:
+    def register[ArtifactT: Artifact[Any, Any]](
+        self,
+        definition: ArtifactDefinition[ArtifactT],
+    ) -> ArtifactDefinition[ArtifactT]:
         """Register and return an artifact definition."""
         if not isinstance(definition, ArtifactDefinition):
             raise TypeError("catalog entries must be ArtifactDefinition instances")
