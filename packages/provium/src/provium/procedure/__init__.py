@@ -9,6 +9,7 @@ from .config import (
     load_json_configuration,
     load_yaml_configuration,
 )
+from .context import ProcedureProcessContext, ProcedureSetupContext
 from .definition import (
     Procedure,
     ProcedureContract,
@@ -55,7 +56,9 @@ __all__ = [
     "ProcedureOptionalOutputField",
     "ProcedureOutputField",
     "ProcedureOutputs",
+    "ProcedureProcessContext",
     "ProcedureRepeatedInputField",
+    "ProcedureSetupContext",
     "compose_configuration",
     "discover_procedure_catalogs",
     "input",

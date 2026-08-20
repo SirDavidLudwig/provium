@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
 from importlib import import_module
+from inspect import getattr_static, isabstract, isfunction, signature
 from shlex import quote
 from threading import RLock, local
 from typing import Any, ClassVar, Literal, cast, get_args, get_origin
@@ -15,6 +17,7 @@ from provium.artifact import ArtifactDefinition
 from provium.artifact.binding import validate_artifact_class
 
 from .config import ProcedureConfig
+from .context import ProcedureProcessContext, ProcedureSetupContext
 from .io import ProcedureInputs, ProcedureIOField, ProcedureOutputs
 
 
@@ -317,10 +320,31 @@ class Procedure[
     SetupInputsT: ProcedureInputs,
     InputsT: ProcedureInputs,
     OutputsT: ProcedureOutputs,
-]:
+](ABC):
     """Base type for a concrete procedure implementation."""
 
     definition: ClassVar[ProcedureDefinition[Any]]
+
+    def setup(
+        self,
+        context: ProcedureSetupContext,
+        configuration: ConfigT,
+        inputs: SetupInputsT,
+    ) -> None:
+        """Prepare reusable state before processing begins."""
+
+    @abstractmethod
+    def process(
+        self,
+        context: ProcedureProcessContext,
+        configuration: ConfigT,
+        inputs: InputsT,
+        outputs: OutputsT,
+    ) -> None:
+        """Process one invocation."""
+
+    def close(self) -> None:
+        """Release state prepared by :meth:`setup`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -407,6 +431,8 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 self._validate_resolved_definition(resolved_class)
                 self._validate_resolved_specialization(resolved_class)
                 self._validate_contract_artifacts()
+                self._validate_resolved_concrete(resolved_class)
+                self._validate_lifecycle_signatures(resolved_class)
                 object.__setattr__(self, "_resolved_class", resolved_class)
                 return cast(type[ProcedureT], resolved_class)
             finally:
@@ -474,6 +500,42 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
                 f"procedure {self.identifier} generic specialization does not match "
                 "its contract"
             )
+
+    def _validate_resolved_concrete(
+        self,
+        resolved: type[Procedure[Any, Any, Any, Any]],
+    ) -> None:
+        if isabstract(resolved):
+            raise TypeError(
+                f"procedure definition {self.identifier} must resolve to a "
+                "concrete Procedure class"
+            )
+
+    def _validate_lifecycle_signatures(
+        self,
+        resolved: type[Procedure[Any, Any, Any, Any]],
+    ) -> None:
+        self._validate_hook_call_shape(resolved, "setup", 4)
+        self._validate_hook_call_shape(resolved, "process", 5)
+
+    def _validate_hook_call_shape(
+        self,
+        resolved: type[Procedure[Any, Any, Any, Any]],
+        hook: str,
+        positional_count: int,
+    ) -> None:
+        if not isfunction(getattr_static(resolved, hook)):
+            raise TypeError(
+                f"procedure {self.identifier} {hook} must be an instance method"
+            )
+        arguments = [object()] * positional_count
+        try:
+            signature(getattr(resolved, hook)).bind(*arguments)
+        except TypeError as error:
+            raise TypeError(
+                f"procedure {self.identifier} {hook} signature is incompatible "
+                "with its lifecycle hook"
+            ) from error
 
     def _validate_contract_artifacts(self) -> None:
         definitions = self._contract_artifact_definitions()

@@ -19,6 +19,7 @@ from provium import (
     ProcedureInputs,
     ProcedureIOFieldMetadata,
     ProcedureOutputs,
+    ProcedureProcessContext,
     input,
     optional_input,
     optional_output,
@@ -90,6 +91,15 @@ EXAMPLE_DEFINITION = ProcedureDefinition(
 
 class ExampleProcedure(Procedure[Config, SetupInputs, Inputs, Outputs]):
     definition = EXAMPLE_DEFINITION
+
+    def process(
+        self,
+        context: ProcedureProcessContext,
+        configuration: Config,
+        inputs: Inputs,
+        outputs: Outputs,
+    ) -> None:
+        pass
 
 
 def test_procedure_is_a_specialized_class_with_a_definition() -> None:
@@ -626,6 +636,118 @@ def test_procedure_definition_rejects_an_unspecialized_procedure(
         definition.resolve()
 
 
+def test_procedure_definition_rejects_an_abstract_procedure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class AbstractProcedure(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        pass
+
+    AbstractProcedure.definition = definition
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=AbstractProcedure),
+    )
+
+    with pytest.raises(TypeError, match="must resolve to a concrete Procedure class"):
+        definition.resolve()
+
+
+@pytest.mark.parametrize("hook", ["setup", "process"])
+def test_procedure_definition_rejects_an_incompatible_lifecycle_hook(
+    monkeypatch: pytest.MonkeyPatch,
+    hook: str,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class InvalidSetup(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        def setup(self) -> None:
+            pass
+
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: Config,
+            inputs: Inputs,
+            outputs: Outputs,
+        ) -> None:
+            pass
+
+    class InvalidProcess(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        def process(self) -> None:
+            pass
+
+    target = InvalidSetup if hook == "setup" else InvalidProcess
+    target.definition = definition
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=target),
+    )
+
+    with pytest.raises(TypeError, match=rf"procedure .* {hook} signature"):
+        definition.resolve()
+
+
+@pytest.mark.parametrize("descriptor", ["class", "static"])
+def test_procedure_definition_requires_instance_lifecycle_methods(
+    monkeypatch: pytest.MonkeyPatch,
+    descriptor: str,
+) -> None:
+    definition = ProcedureDefinition(
+        "example.ExampleV1",
+        "example.procedures:value",
+        "Example",
+        None,
+        Contract,
+    )
+
+    class ClassProcedure(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        @classmethod
+        def process(
+            cls,
+            instance: object,
+            context: ProcedureProcessContext,
+            configuration: Config,
+            inputs: Inputs,
+            outputs: Outputs,
+        ) -> None:
+            pass
+
+    class StaticProcedure(Procedure[Config, SetupInputs, Inputs, Outputs]):
+        @staticmethod
+        def process(
+            instance: object,
+            context: ProcedureProcessContext,
+            configuration: Config,
+            inputs: Inputs,
+            outputs: Outputs,
+        ) -> None:
+            pass
+
+    target = ClassProcedure if descriptor == "class" else StaticProcedure
+    target.definition = definition
+    monkeypatch.setattr(
+        "provium.procedure.definition.import_module",
+        lambda name: SimpleNamespace(value=target),
+    )
+
+    with pytest.raises(TypeError, match="process must be an instance method"):
+        definition.resolve()
+
+
 def test_procedure_definition_rejects_a_partial_generic_specialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -717,7 +839,14 @@ def test_procedure_definition_resolution_is_thread_safe(
     )
 
     class Target(Procedure[Config, SetupInputs, Inputs, Outputs]):
-        pass
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: Config,
+            inputs: Inputs,
+            outputs: Outputs,
+        ) -> None:
+            pass
 
     Target.definition = definition
     barrier = Barrier(4)
@@ -772,7 +901,14 @@ def test_procedure_resolution_validates_each_unique_contract_artifact_once(
             ArtifactContract.Outputs,
         ]
     ):
-        pass
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: ArtifactContract.Inputs,
+            outputs: ArtifactContract.Outputs,
+        ) -> None:
+            pass
 
     Target.definition = definition
     resolutions: list[ArtifactDefinition[ExampleArtifact]] = []
