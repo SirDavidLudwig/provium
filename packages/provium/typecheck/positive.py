@@ -12,10 +12,12 @@ from provium import (
     ArtifactWriter,
     Procedure,
     ProcedureCatalog,
+    ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
     ProcedureInputs,
     ProcedureOutputs,
+    validate_procedure_configuration,
 )
 
 
@@ -47,8 +49,14 @@ assert_type(
 )
 
 
-class Config:
-    pass
+class Config(ProcedureConfig):
+    threshold: float = 0.5
+
+
+assert_type(
+    validate_procedure_configuration("example.DetectV1", Config, {}),
+    Config,
+)
 
 
 class Contract(ProcedureContract[Config]):

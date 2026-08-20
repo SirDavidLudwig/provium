@@ -17,6 +17,10 @@ from .definition import (
     ProcedureOutputs,
 )
 from .discovery import discover_procedure_catalogs, reset_procedure_discovery
+from .validation import (
+    ProcedureConfigurationError,
+    validate_procedure_configuration,
+)
 
 __all__ = [
     "ConfigurationSnapshot",
@@ -24,6 +28,7 @@ __all__ = [
     "Procedure",
     "ProcedureCatalog",
     "ProcedureConfig",
+    "ProcedureConfigurationError",
     "ProcedureContract",
     "ProcedureDefinition",
     "ProcedureInputs",
@@ -33,4 +38,5 @@ __all__ = [
     "load_json_configuration",
     "load_yaml_configuration",
     "reset_procedure_discovery",
+    "validate_procedure_configuration",
 ]

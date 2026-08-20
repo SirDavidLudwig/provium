@@ -17,6 +17,7 @@ from .procedure import (
     Procedure,
     ProcedureCatalog,
     ProcedureConfig,
+    ProcedureConfigurationError,
     ProcedureContract,
     ProcedureDefinition,
     ProcedureInputs,
@@ -26,6 +27,7 @@ from .procedure import (
     load_json_configuration,
     load_yaml_configuration,
     reset_procedure_discovery,
+    validate_procedure_configuration,
 )
 
 __version__ = version("provium")
@@ -41,6 +43,7 @@ __all__ = [
     "Procedure",
     "ProcedureCatalog",
     "ProcedureConfig",
+    "ProcedureConfigurationError",
     "ProcedureContract",
     "ProcedureDefinition",
     "ProcedureInputs",
@@ -53,4 +56,5 @@ __all__ = [
     "load_yaml_configuration",
     "reset_artifact_discovery",
     "reset_procedure_discovery",
+    "validate_procedure_configuration",
 ]
