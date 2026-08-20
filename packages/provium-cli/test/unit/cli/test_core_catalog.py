@@ -6,11 +6,11 @@ from pathlib import Path
 from provium_cli import CommandCatalog
 
 
-def test_core_catalog_starts_empty() -> None:
+def test_core_catalog_registers_procedure_commands() -> None:
     from provium_cli.commands import catalog
 
     assert isinstance(catalog, CommandCatalog)
-    assert catalog.commands == {}
+    assert tuple(catalog.commands) == ("procedure", "execute")
 
 
 def test_project_publishes_the_core_command_catalog() -> None:

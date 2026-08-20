@@ -30,7 +30,7 @@ class ProcedureExecutor:
         definition: ProcedureDefinition[ProcedureT],
         *,
         configuration_layers: Iterable[Mapping[str, object]] = (),
-        setup_inputs: Mapping[str, ReadBindingValue] | None = None,
+        setup_inputs: Mapping[str, ReadBindingValue] | ProcedureInputs | None = None,
     ) -> PreparedProcedure[Any, Any, Any]:
         """Create and set up one reusable procedure instance."""
         procedure_type = definition.resolve()
@@ -47,9 +47,9 @@ class ProcedureExecutor:
         definition: ProcedureDefinition[ProcedureT],
         *,
         configuration_layers: Iterable[Mapping[str, object]] = (),
-        setup_inputs: Mapping[str, ReadBindingValue] | None = None,
-        inputs: Mapping[str, ReadBindingValue],
-        outputs: Mapping[str, ArtifactWriteBinding[Any]],
+        setup_inputs: Mapping[str, ReadBindingValue] | ProcedureInputs | None = None,
+        inputs: Mapping[str, ReadBindingValue] | ProcedureInputs,
+        outputs: Mapping[str, ArtifactWriteBinding[Any]] | ProcedureOutputs,
         cancellation: CancellationToken | None = None,
     ) -> ProcedureExecutionResult:
         """Prepare, process one invocation, and close the procedure."""
@@ -121,12 +121,18 @@ class ProcedureExecutor:
     @staticmethod
     def _prepare_setup_inputs(
         definition: ProcedureDefinition[Any],
-        supplied: Mapping[str, ReadBindingValue] | None,
+        supplied: Mapping[str, ReadBindingValue] | ProcedureInputs | None,
     ) -> ProcedureInputs:
-        bindings: Mapping[str, object] = {} if supplied is None else supplied
         record_type = cast(
             type[ProcedureInputs],
             getattr(definition.contract, "SetupInputs"),
+        )
+        if isinstance(supplied, record_type):
+            return supplied
+        bindings: Mapping[str, object] = (
+            dict[str, object]()
+            if supplied is None
+            else cast(Mapping[str, object], supplied)
         )
         try:
             return build_procedure_inputs(record_type, bindings)
@@ -136,14 +142,18 @@ class ProcedureExecutor:
     @staticmethod
     def _prepare_process_inputs(
         definition: ProcedureDefinition[Any],
-        supplied: Mapping[str, ReadBindingValue],
+        supplied: Mapping[str, ReadBindingValue] | ProcedureInputs,
     ) -> ProcedureInputs:
         record_type = cast(
             type[ProcedureInputs],
             getattr(definition.contract, "Inputs"),
         )
+        if isinstance(supplied, record_type):
+            return supplied
         try:
-            return build_procedure_inputs(record_type, supplied)
+            return build_procedure_inputs(
+                record_type, cast(Mapping[str, object], supplied)
+            )
         except (TypeError, ValueError) as error:
             ProcedureExecutor._raise_binding_error(
                 definition,
@@ -154,14 +164,18 @@ class ProcedureExecutor:
     @staticmethod
     def _prepare_process_outputs(
         definition: ProcedureDefinition[Any],
-        supplied: Mapping[str, ArtifactWriteBinding[Any]],
+        supplied: Mapping[str, ArtifactWriteBinding[Any]] | ProcedureOutputs,
     ) -> ProcedureOutputs:
         record_type = cast(
             type[ProcedureOutputs],
             getattr(definition.contract, "Outputs"),
         )
+        if isinstance(supplied, record_type):
+            return supplied
         try:
-            return build_procedure_outputs(record_type, supplied)
+            return build_procedure_outputs(
+                record_type, cast(Mapping[str, object], supplied)
+            )
         except (TypeError, ValueError) as error:
             ProcedureExecutor._raise_binding_error(definition, "outputs", error)
 

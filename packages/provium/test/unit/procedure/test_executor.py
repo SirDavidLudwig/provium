@@ -365,6 +365,35 @@ def test_execute_runs_one_typed_invocation_and_closes(
     assert procedure.close_calls == 1
 
 
+def test_executor_accepts_preconstructed_typed_io_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: ExecutorProcedure,
+    )
+    setup_inputs = Contract.SetupInputs._from_bindings({})
+    inputs = Contract.Inputs._from_bindings({})
+    outputs = Contract.Outputs._from_bindings({})
+
+    prepared = ProcedureExecutor().prepare(DEFINITION, setup_inputs=setup_inputs)
+    procedure = ExecutorProcedure.instances[0]
+    assert procedure.setup_inputs is setup_inputs
+    prepared.close()
+
+    ProcedureExecutor().execute(
+        DEFINITION,
+        setup_inputs=setup_inputs,
+        inputs=inputs,
+        outputs=outputs,
+    )
+    procedure = ExecutorProcedure.instances[1]
+    assert procedure.setup_inputs is setup_inputs
+    assert procedure.process_inputs is inputs
+    assert procedure.process_outputs is outputs
+
+
 def test_execute_forwards_cancellation_and_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

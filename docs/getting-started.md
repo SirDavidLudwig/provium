@@ -8,49 +8,48 @@ Provium requires Python 3.12 or newer.
 python -m pip install provium provium-cli
 ```
 
-`provium` provides the core library. `provium-cli` provides the `provium`
-command and the command plugin API.
+`provium` provides typed artifacts, procedure execution, sessions, and
+provenance. `provium-cli` provides the `provium` command and command plugin API.
 
-## Create a provenance-aware workflow
+## Build a plugin
 
-Provium includes `JsonArtifact` for storing JSON-compatible values. This
-example records a collection of measurements and produces a summary:
+A plugin normally contains lightweight artifact and procedure definitions,
+their concrete implementation classes, and catalogs published through package
+entry points.
 
-```python
-from provium import JsonArtifact, Procedure
+```toml
+[project.entry-points."provium.artifact_catalogs"]
+example = "example_plugin.catalogs:artifacts"
 
-COLLECT = Procedure(name="collect", version="1")
-SUMMARIZE = Procedure(name="summarize", version="1")
-
-with COLLECT.execute():
-    measurements = JsonArtifact.create("measurements.pa")
-    measurements.write({"measurements": [12.5, 14.0, 13.5]})
-
-with SUMMARIZE.execute():
-    measurements = JsonArtifact.open("measurements.pa")
-    payload = measurements.read()
-    assert isinstance(payload, dict)
-    values = payload["measurements"]
-    assert isinstance(values, list)
-
-    summary = JsonArtifact.create("summary.pa")
-    summary.write(
-        {
-            "count": len(values),
-            "minimum": min(values),
-            "maximum": max(values),
-            "average": round(sum(values) / len(values), 2),
-        }
-    )
+[project.entry-points."provium.procedure_catalogs"]
+example = "example_plugin.catalogs:procedures"
 ```
 
-When each context exits successfully, Provium closes its handles and finalizes
-its output files. If a context exits with an exception, pending outputs are not
-committed. Readers and writers are bound to their execution and cannot be used
-after its context exits.
+Definitions make identifiers, descriptions, configuration schemas, and typed
+ports inspectable without importing implementation modules. Resolution validates
+the concrete classes only when execution or explicit inspection needs them.
+
+After installing the plugin, verify discovery and inspect its contract:
+
+```bash
+provium procedure list
+provium procedure show example.ProcessV1
+```
+
+Execute it by binding the fields declared by its contract:
+
+```bash
+provium execute example.ProcessV1 \
+  --config settings.yaml \
+  --input source=source.pa \
+  --output result=result.pa
+```
+
+Provium validates configuration and cardinality, streams output bodies to disk,
+publishes outputs transactionally, and embeds their complete provenance lineage.
 
 ## Next steps
 
-- Learn how to define [custom artifact types](guides/artifacts.md).
-- Understand [procedures, sessions, and provenance](guides/procedures.md).
-- Inspect results with the [command-line tools](guides/cli.md).
+- Define [artifact classes and catalogs](guides/artifacts.md).
+- Define and run [typed procedures](guides/procedures.md).
+- Use the [command-line tools](guides/cli.md).

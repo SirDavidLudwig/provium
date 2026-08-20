@@ -3,7 +3,7 @@
 This repository is a Python monorepo containing two independently published
 packages:
 
-- [`packages/provium/`](packages/provium/) — the dependency-free core library.
+- [`packages/provium/`](packages/provium/) — the typed core library.
 - [`packages/provium-cli/`](packages/provium-cli/) — the command-line interface and command plugin
   system.
 

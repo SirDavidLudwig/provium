@@ -9,7 +9,7 @@ description = "Command-line interface and command plugin system for Provium"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["provium>=0.5.0"]
+dependencies = ["provium>=0.5.0", "PyYAML>=6,<7"]
 
 [project.scripts]
 provium = "provium_cli:main"
