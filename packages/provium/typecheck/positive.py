@@ -12,6 +12,7 @@ from provium import (
     ArtifactReader,
     ArtifactWriteBinding,
     ArtifactWriter,
+    PreparedProcedure,
     Procedure,
     ProcedureCatalog,
     ProcedureConfig,
@@ -19,6 +20,7 @@ from provium import (
     ProcedureDefinition,
     ProcedureInputs,
     ProcedureOutputs,
+    ProcedureProcessContext,
     input,
     optional_input,
     optional_output,
@@ -99,6 +101,15 @@ class DetectProcedure(
 ):
     definition: ClassVar[ProcedureDefinition[DetectProcedure]]
 
+    def process(
+        self,
+        context: ProcedureProcessContext,
+        configuration: Config,
+        inputs: Contract.Inputs,
+        outputs: Contract.Outputs,
+    ) -> None:
+        pass
+
 
 DETECT_PROCEDURE: ProcedureDefinition[DetectProcedure] = ProcedureDefinition(
     identifier="example.DetectV1",
@@ -115,3 +126,20 @@ assert_type(
     ProcedureCatalog().register(DETECT_PROCEDURE),
     ProcedureDefinition[DetectProcedure],
 )
+
+
+def check_prepared_procedure_types(
+    procedure: DetectProcedure,
+    configuration: Config,
+    setup_inputs: Contract.SetupInputs,
+    inputs: Contract.Inputs,
+    outputs: Contract.Outputs,
+) -> None:
+    prepared = PreparedProcedure(procedure, configuration, setup_inputs)
+
+    assert_type(
+        prepared,
+        PreparedProcedure[Config, Contract.Inputs, Contract.Outputs],
+    )
+    assert_type(prepared.configuration, Config)
+    assert_type(prepared.execute(inputs=inputs, outputs=outputs), None)

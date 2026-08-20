@@ -16,6 +16,7 @@ from .artifact import (
 from .procedure import (
     ConfigurationSnapshot,
     JsonValue,
+    PreparedProcedure,
     Procedure,
     ProcedureCatalog,
     ProcedureConfig,
@@ -59,6 +60,7 @@ __all__ = [
     "ArtifactWriteBinding",
     "ConfigurationSnapshot",
     "JsonValue",
+    "PreparedProcedure",
     "Procedure",
     "ProcedureCatalog",
     "ProcedureConfig",

@@ -33,6 +33,7 @@ from .io import (
     output,
     repeated_input,
 )
+from .prepared import PreparedProcedure
 from .validation import (
     ProcedureConfigurationError,
     validate_procedure_configuration,
@@ -41,6 +42,7 @@ from .validation import (
 __all__ = [
     "ConfigurationSnapshot",
     "JsonValue",
+    "PreparedProcedure",
     "Procedure",
     "ProcedureCatalog",
     "ProcedureConfig",

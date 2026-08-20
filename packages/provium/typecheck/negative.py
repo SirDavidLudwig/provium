@@ -9,6 +9,7 @@ from provium import (
     ArtifactDefinition,
     ArtifactReader,
     ArtifactWriter,
+    PreparedProcedure,
     Procedure,
     ProcedureConfig,
     ProcedureContract,
@@ -77,6 +78,14 @@ class Outputs(ProcedureOutputs):
     pass
 
 
+class OtherInputs(ProcedureInputs):
+    pass
+
+
+class OtherOutputs(ProcedureOutputs):
+    pass
+
+
 class Contract(ProcedureContract[Config]):
     pass
 
@@ -113,3 +122,20 @@ OTHER_PROCEDURE: ProcedureDefinition[OtherProcedure] = ProcedureDefinition(
 )
 
 wrong_procedure_definition: ProcedureDefinition[ExampleProcedure] = OTHER_PROCEDURE  # pyright: ignore[reportAssignmentType]
+
+
+def reject_mismatched_prepared_types(
+    procedure: ExampleProcedure,
+    configuration: Config,
+    other_configuration: OtherConfig,
+    setup_inputs: SetupInputs,
+    inputs: Inputs,
+    outputs: Outputs,
+    other_inputs: OtherInputs,
+    other_outputs: OtherOutputs,
+) -> None:
+    prepared = PreparedProcedure(procedure, configuration, setup_inputs)
+
+    PreparedProcedure(procedure, other_configuration, setup_inputs)  # pyright: ignore[reportArgumentType]
+    prepared.execute(inputs=other_inputs, outputs=outputs)  # pyright: ignore[reportArgumentType]
+    prepared.execute(inputs=inputs, outputs=other_outputs)  # pyright: ignore[reportArgumentType]
