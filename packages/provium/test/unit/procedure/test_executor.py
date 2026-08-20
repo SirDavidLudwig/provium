@@ -10,6 +10,7 @@ from provium import (
     ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
+    ProcedureExecutionResult,
     ProcedureExecutor,
     ProcedureProcessContext,
     ProcedureSetupContext,
@@ -275,16 +276,15 @@ def test_execute_runs_one_typed_invocation_and_closes(
         lambda self: ExecutorProcedure,
     )
 
-    assert (
-        ProcedureExecutor().execute(
-            DEFINITION,
-            configuration_layers=({"value": 4},),
-            inputs={},
-            outputs={},
-        )
-        is None
+    result = ProcedureExecutor().execute(
+        DEFINITION,
+        configuration_layers=({"value": 4},),
+        inputs={},
+        outputs={},
     )
 
+    assert isinstance(result, ProcedureExecutionResult)
+    assert result.procedure.name == DEFINITION.identifier
     assert len(ExecutorProcedure.instances) == 1
     procedure = ExecutorProcedure.instances[0]
     assert isinstance(procedure.process_inputs, Contract.Inputs)

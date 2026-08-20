@@ -25,6 +25,8 @@ from provium.provenance import (
 )
 from provium.session import Session, current_session, session
 
+from .result import ProcedureExecutionResult
+
 _EMPTY_DIGEST = hashlib.sha256(b"").hexdigest()
 
 
@@ -40,6 +42,7 @@ class ProcedureExecutionSession:
         self._staged: dict[str, StagedArtifact[Any]] | None = None
         self._references: dict[str, ArtifactReference] = {}
         self._lineage: ArtifactLineage | None = None
+        self._result: ProcedureExecutionResult | None = None
         self._used = False
 
     @property
@@ -58,6 +61,11 @@ class ProcedureExecutionSession:
     def lineage(self) -> ArtifactLineage | None:
         """Return finalized execution lineage after successful publication."""
         return self._lineage
+
+    @property
+    def result(self) -> ProcedureExecutionResult | None:
+        """Return immutable metadata after successful publication."""
+        return self._result
 
     def __enter__(self) -> Self:
         if self._used:
@@ -195,6 +203,13 @@ class ProcedureExecutionSession:
             )
         self._publish_outputs(metadata_by_name)
         self._lineage = lineage
+        self._result = ProcedureExecutionResult(
+            execution.identity,
+            execution.procedure,
+            execution.inputs,
+            {name: self._references[name] for name in self._staged},
+            lineage,
+        )
 
     def _publish_outputs(self, metadata: Mapping[str, ArtifactHeader]) -> None:
         assert self._staged is not None

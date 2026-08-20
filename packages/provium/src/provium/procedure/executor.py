@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable, Mapping, Sequence
 from inspect import signature
-from typing import Any, cast
+from typing import Any, Never, cast
 
 from provium.artifact import ArtifactReadBinding, ArtifactWriteBinding
 
@@ -15,6 +15,7 @@ from .io import (
     build_procedure_outputs,
 )
 from .prepared import PreparedProcedure
+from .result import ProcedureExecutionResult
 from .validation import validate_procedure_configuration
 
 type ReadBindingValue = ArtifactReadBinding[Any] | Sequence[ArtifactReadBinding[Any]]
@@ -48,7 +49,7 @@ class ProcedureExecutor:
         setup_inputs: Mapping[str, ReadBindingValue] | None = None,
         inputs: Mapping[str, ReadBindingValue],
         outputs: Mapping[str, ArtifactWriteBinding[Any]],
-    ) -> None:
+    ) -> ProcedureExecutionResult:
         """Prepare, process one invocation, and close the procedure."""
         prepared = self.prepare(
             definition,
@@ -58,16 +59,17 @@ class ProcedureExecutor:
         try:
             process_inputs = self._prepare_process_inputs(definition, inputs)
             process_outputs = self._prepare_process_outputs(definition, outputs)
-            prepared.execute(inputs=process_inputs, outputs=process_outputs)
+            result = prepared.execute(inputs=process_inputs, outputs=process_outputs)
         except BaseException as error:
             self._close_after_failure(prepared, error)
         prepared.close()
+        return result
 
     @staticmethod
     def _close_after_failure(
         prepared: PreparedProcedure[Any, Any, Any],
         error: BaseException,
-    ) -> None:
+    ) -> Never:
         try:
             prepared.close()
         except BaseException as close_error:

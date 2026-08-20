@@ -21,6 +21,7 @@ from provium import (
     ProcedureContract,
     ProcedureDefinition,
     ProcedureExecutionRecord,
+    ProcedureExecutionResult,
     ProcedureInputs,
     ProcedureOutputs,
     ProcedureProcessContext,
@@ -131,14 +132,16 @@ def test_prepared_execution_stages_and_publishes_declared_output(
 
     with session():
         prepared = prepare()
-        assert (
-            prepared.execute(
-                inputs=Contract.Inputs._from_bindings({}),
-                outputs=Contract.Outputs._from_bindings({"result": binding}),
-            )
-            is None
+        result = prepared.execute(
+            inputs=Contract.Inputs._from_bindings({}),
+            outputs=Contract.Outputs._from_bindings({"result": binding}),
         )
 
+    assert isinstance(result, ProcedureExecutionResult)
+    assert result.procedure.name == DEFINITION.identifier
+    assert result.inputs == ()
+    assert result.outputs == {"result": result.outputs["result"]}
+    assert result.lineage is not None
     data = destination.read_bytes()
     header = decode_header(data)
     record = next(iter(header.lineage.artifacts.values()))
@@ -147,7 +150,13 @@ def test_prepared_execution_stages_and_publishes_declared_output(
     assert execution.procedure.version == Contract.metadata.digest
     assert execution.procedure.config is None
     assert execution.procedure.config_codec is None
+    assert result.identity == execution.identity
+    assert result.outputs["result"] in execution.outputs
+    assert result.lineage == header.lineage
     assert data[header.body_offset :] == b"result"
+
+    with pytest.raises(TypeError):
+        result.outputs["other"] = result.outputs["result"]  # type: ignore[index]
 
 
 def test_callback_rejects_an_equal_but_undeclared_output_binding(
@@ -207,6 +216,34 @@ def test_output_binding_cannot_open_outside_a_procedure_callback(
 ) -> None:
     with pytest.raises(RuntimeError, match="active procedure callback"):
         BytesArtifact.bind_write(tmp_path / "result.pa").open()
+
+
+def test_unregistered_procedure_cannot_produce_an_artifact(tmp_path: Path) -> None:
+    class UnregisteredProcedure(
+        Procedure[None, ProcedureInputs, ProcedureInputs, Contract.Outputs]
+    ):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: ProcedureInputs,
+            outputs: Contract.Outputs,
+        ) -> None:
+            pass
+
+    prepared = PreparedProcedure(
+        UnregisteredProcedure(),
+        None,
+        ProcedureInputs._from_bindings({}),
+    )
+
+    with pytest.raises(TypeError, match="must declare a definition"):
+        prepared.execute(
+            inputs=ProcedureInputs._from_bindings({}),
+            outputs=Contract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(tmp_path / "result.pa")}
+            ),
+        )
 
 
 def test_prepared_execution_records_canonical_configuration(tmp_path: Path) -> None:
@@ -298,6 +335,42 @@ def test_no_output_callback_still_rejects_undeclared_write_binding(
             inputs=ProcedureInputs._from_bindings({}),
             outputs=EmptyOutputs._from_bindings({}),
         )
+
+
+def test_output_free_executions_return_fresh_immutable_metadata() -> None:
+    class EmptyOutputs(ProcedureOutputs):
+        pass
+
+    class EmptyProcedure(
+        Procedure[None, ProcedureInputs, ProcedureInputs, EmptyOutputs]
+    ):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: ProcedureInputs,
+            outputs: EmptyOutputs,
+        ) -> None:
+            pass
+
+    prepared = PreparedProcedure(
+        EmptyProcedure(),
+        None,
+        ProcedureInputs._from_bindings({}),
+    )
+    results = [
+        prepared.execute(
+            inputs=ProcedureInputs._from_bindings({}),
+            outputs=EmptyOutputs._from_bindings({}),
+        )
+        for _ in range(2)
+    ]
+
+    assert all(isinstance(result, ProcedureExecutionResult) for result in results)
+    assert results[0].identity != results[1].identity
+    assert results[0].inputs == ()
+    assert results[0].outputs == {}
+    assert results[0].lineage == ArtifactLineage()
 
 
 class InputContract(ProcedureContract[None]):

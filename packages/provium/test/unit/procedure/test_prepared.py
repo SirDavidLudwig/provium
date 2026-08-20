@@ -9,6 +9,7 @@ from provium import (
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
+    ProcedureExecutionResult,
     ProcedureInputs,
     ProcedureOutputs,
     ProcedureProcessContext,
@@ -87,8 +88,12 @@ def test_prepared_procedure_retains_state_across_sequential_executions() -> None
     assert prepared.configuration is configuration
     assert procedure.setup_calls == 1
 
-    assert prepared.execute(inputs=inputs, outputs=outputs) is None
-    assert prepared.execute(inputs=inputs, outputs=outputs) is None
+    first = prepared.execute(inputs=inputs, outputs=outputs)
+    second = prepared.execute(inputs=inputs, outputs=outputs)
+
+    assert isinstance(first, ProcedureExecutionResult)
+    assert isinstance(second, ProcedureExecutionResult)
+    assert first.identity != second.identity
 
     assert procedure.total == 6
     assert procedure.configurations == [configuration, configuration, configuration]
@@ -197,7 +202,7 @@ def test_active_execution_rejects_reentry_and_close() -> None:
             prepared.close()
 
         release.set()
-        assert execution.result(timeout=1) is None
+        assert isinstance(execution.result(timeout=1), ProcedureExecutionResult)
 
 
 def test_unconfigured_procedure_receives_none_for_every_lifecycle_hook() -> None:

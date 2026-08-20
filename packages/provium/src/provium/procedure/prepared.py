@@ -2,17 +2,19 @@
 
 from threading import Lock
 from typing import Any, Never, cast
+from uuid import uuid4
 
 from provium.artifact import ArtifactReadBinding, ArtifactWriteBinding
 from provium.provenance import ProcedureRecord
-from provium.session import PersistentSession, session
+from provium.session import PersistentSession, Session, session
 
 from .authorization import authorize_bindings
 from .config import ConfigurationSnapshot, ProcedureConfig
 from .context import ProcedureProcessContext, ProcedureSetupContext
-from .definition import Procedure
+from .definition import Procedure, ProcedureDefinition
 from .execution import ProcedureExecutionSession
 from .io import ProcedureInputs, ProcedureOutputs
+from .result import ProcedureExecutionResult
 
 
 class PreparedProcedure[
@@ -62,27 +64,36 @@ class PreparedProcedure[
         """Return the configuration shared by setup and every execution."""
         return self._configuration
 
-    def execute(self, *, inputs: InputsT, outputs: OutputsT) -> None:
+    def execute(
+        self, *, inputs: InputsT, outputs: OutputsT
+    ) -> ProcedureExecutionResult:
         """Process one invocation on the prepared instance."""
         self._begin_execution()
         try:
             with self._setup_session:
-                input_bindings = self._input_bindings(inputs)
-                output_bindings = self._output_bindings(outputs)
-                if output_bindings:
-                    self._execute_with_outputs(
-                        inputs,
-                        outputs,
-                        input_bindings,
-                        output_bindings,
-                    )
-                elif input_bindings:
-                    self._execute_without_outputs(inputs, outputs, input_bindings)
-                else:
-                    with authorize_bindings((), {}, {}):
-                        self._process(inputs, outputs)
+                return self._execute_active(inputs, outputs)
         finally:
             self._finish_execution()
+
+    def _execute_active(
+        self,
+        inputs: InputsT,
+        outputs: OutputsT,
+    ) -> ProcedureExecutionResult:
+        input_bindings = self._input_bindings(inputs)
+        output_bindings = self._output_bindings(outputs)
+        if output_bindings:
+            return self._execute_with_outputs(
+                inputs,
+                outputs,
+                input_bindings,
+                output_bindings,
+            )
+        if input_bindings:
+            return self._execute_without_outputs(inputs, outputs, input_bindings)
+        with authorize_bindings((), {}, {}):
+            self._process(inputs, outputs)
+        return self._execution_result(self._setup_session)
 
     def _execute_with_outputs(
         self,
@@ -90,7 +101,7 @@ class PreparedProcedure[
         outputs: OutputsT,
         input_bindings: tuple[ArtifactReadBinding[Any], ...],
         output_bindings: dict[str, ArtifactWriteBinding[Any]],
-    ) -> None:
+    ) -> ProcedureExecutionResult:
         with ProcedureExecutionSession(self._procedure_record()) as execution:
             with authorize_bindings(input_bindings, {}, {}):
                 identities = self._register_inputs(input_bindings)
@@ -102,14 +113,15 @@ class PreparedProcedure[
                 input_identities=identities,
             ):
                 self._process(inputs, outputs)
+        return cast(ProcedureExecutionResult, execution.result)
 
     def _execute_without_outputs(
         self,
         inputs: InputsT,
         outputs: OutputsT,
         input_bindings: tuple[ArtifactReadBinding[Any], ...],
-    ) -> None:
-        with session():
+    ) -> ProcedureExecutionResult:
+        with session() as active:
             with authorize_bindings(input_bindings, {}, {}):
                 identities = self._register_inputs(input_bindings)
             with authorize_bindings(
@@ -119,6 +131,7 @@ class PreparedProcedure[
                 input_identities=identities,
             ):
                 self._process(inputs, outputs)
+            return self._execution_result(active)
 
     def _process(self, inputs: InputsT, outputs: OutputsT) -> None:
         self._procedure.process(
@@ -164,7 +177,15 @@ class PreparedProcedure[
         return identities
 
     def _procedure_record(self) -> ProcedureRecord:
-        definition = self._procedure.definition
+        record = self._optional_procedure_record()
+        if record is None:
+            raise TypeError("artifact-producing procedure must declare a definition")
+        return record
+
+    def _optional_procedure_record(self) -> ProcedureRecord | None:
+        definition = getattr(self._procedure, "definition", None)
+        if not isinstance(definition, ProcedureDefinition):
+            return None
         if self._configuration is None:
             return ProcedureRecord(
                 definition.identifier,
@@ -176,6 +197,14 @@ class PreparedProcedure[
             definition.contract.metadata.digest,
             snapshot.value,
             "pydantic-v2",
+        )
+
+    def _execution_result(self, active: Session) -> ProcedureExecutionResult:
+        return ProcedureExecutionResult(
+            str(uuid4()),
+            self._optional_procedure_record(),
+            tuple(record.reference for record in active.inputs),
+            lineage=active.input_lineage,
         )
 
     def close(self) -> None:

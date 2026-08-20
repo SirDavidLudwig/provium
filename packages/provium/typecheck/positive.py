@@ -19,6 +19,7 @@ from provium import (
     ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
+    ProcedureExecutionResult,
     ProcedureExecutor,
     ProcedureInputs,
     ProcedureOutputs,
@@ -159,7 +160,10 @@ def check_prepared_procedure_types(
         PreparedProcedure[Config, Contract.Inputs, Contract.Outputs],
     )
     assert_type(prepared.configuration, Config)
-    assert_type(prepared.execute(inputs=inputs, outputs=outputs), None)
+    assert_type(
+        prepared.execute(inputs=inputs, outputs=outputs),
+        ProcedureExecutionResult,
+    )
 
 
 def check_executor_mapping_types(
@@ -173,5 +177,5 @@ def check_executor_mapping_types(
             inputs={"image": input_binding, "images": [input_binding]},
             outputs={"image": output_binding},
         ),
-        None,
+        ProcedureExecutionResult,
     )
