@@ -2,7 +2,15 @@ name: Tests
 
 on:
   push:
+    branches: [master]
   pull_request:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   lint-format:
@@ -11,26 +19,28 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
-      - name: Install Ruff
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install ruff
-
-      - name: Run Ruff lint check
+      - name: Install lint and type-check dependencies
+        run: python -m pip install -e "./packages/provium[test]"
+      - name: Lint Provium
+        working-directory: packages/provium
+        run: ruff check src test typecheck
+      - name: Check Provium formatting
+        working-directory: packages/provium
+        run: ruff format --check src test typecheck
+      - name: Check Provium types
+        working-directory: packages/provium
+        run: python -m pyright
+      - name: Lint example pipeline
+        working-directory: examples/provium-text-pipeline
         run: ruff check src test
-
-      - name: Run Ruff format check
+      - name: Check example pipeline formatting
+        working-directory: examples/provium-text-pipeline
         run: ruff format --check src test
-
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -46,28 +56,28 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-
-      - name: Install package and test dependencies
+      - name: Install workspace packages
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
-
-      - name: Run tests with coverage
+          python -m pip install -e "./packages/provium[test]"
+          python -m pip install -e "./examples/provium-text-pipeline[test]"
+      - name: Run package tests
+        working-directory: packages/provium
         run: pytest --cov-report=xml
-
-      - name: Upload coverage to Codecov
+      - name: Run example pipeline tests
+        working-directory: examples/provium-text-pipeline
+        run: pytest
+      - name: Upload coverage
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v5
         with:
           disable_search: true
           fail_ci_if_error: true
-          files: coverage.xml
+          files: packages/provium/coverage.xml
+          flags: provium
           use_oidc: true

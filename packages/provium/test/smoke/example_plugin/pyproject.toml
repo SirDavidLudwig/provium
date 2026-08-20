@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provium-example-plugin"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = ["provium>=0.5.0"]
+
+[project.entry-points."provium.artifact_catalogs"]
+example = "provium_example_plugin.catalogs:artifact_catalog"
+
+[project.entry-points."provium.procedure_catalogs"]
+example = "provium_example_plugin.catalogs:procedure_catalog"
+
+[tool.setuptools.packages.find]
+where = ["src"]

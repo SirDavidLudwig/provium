@@ -2,85 +2,22 @@ name: Release
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
 
 permissions:
   contents: read
 
 jobs:
-  release_please:
-    name: Create or update release pull request
+  release-please:
+    name: Create or update release pull requests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      issues: write
       pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
 
     steps:
-      - name: Run Release Please
-        id: release
-        uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v4
         with:
           target-branch: master
-
-  build:
-    name: Build distribution
-    if: needs.release_please.outputs.release_created == 'true'
-    needs: release_please
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build twine
-
-      - name: Build wheel and source distribution
-        run: python -m build
-
-      - name: Validate distributions
-        run: python -m twine check dist/*
-
-      - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: provium-distributions
-          path: dist/*
-          if-no-files-found: error
-
-  publish:
-    name: Publish to PyPI
-    if: needs.release_please.outputs.release_created == 'true'
-    needs:
-      - release_please
-      - build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: pypi
-      url: https://pypi.org/project/provium/
-    permissions:
-      id-token: write
-
-    steps:
-      - name: Download distribution artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: provium-distributions
-          path: dist
-
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
