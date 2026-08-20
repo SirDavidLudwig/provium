@@ -10,6 +10,7 @@ from .artifact import (
     ArtifactReader,
     ArtifactWriteBinding,
     ArtifactWriter,
+    BodyRegion,
     discover_artifact_catalogs,
     reset_artifact_discovery,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "ArtifactReadBinding",
     "ArtifactReader",
     "ArtifactWriter",
+    "BodyRegion",
     "ArtifactWriteBinding",
     "ConfigurationSnapshot",
     "JsonValue",
