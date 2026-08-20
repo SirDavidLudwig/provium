@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
-from importlib.metadata import version as distribution_version
 
-from provium import __version__ as core_version
+from provium import __version__
 
 from .catalog import CommandCatalog
 from .discovery import discover_command_catalogs
@@ -24,9 +23,7 @@ def create_parser(catalog: CommandCatalog) -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=(
-            f"provium {core_version}\nprovium-cli {distribution_version('provium-cli')}"
-        ),
+        version=f"provium {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
     for command_type in catalog.commands.values():

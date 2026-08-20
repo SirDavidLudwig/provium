@@ -10,8 +10,8 @@ import pytest
 from support.provium_test_pipeline.artifacts import TextArtifact
 
 from provium import ArtifactReference, session
-from provium_cli import run
-from provium_cli.commands import catalog as command_catalog
+from provium.cli import run
+from provium.cli.commands import catalog as command_catalog
 
 
 def invoke(

@@ -5,14 +5,13 @@ import argparse
 import pytest
 
 from provium import __version__
-from provium_cli import (
+from provium.cli import (
     Command,
     CommandCatalog,
     create_parser,
     main,
     run,
 )
-from provium_cli import __version__ as cli_version
 
 
 class ExampleCommand(Command):
@@ -81,7 +80,7 @@ def test_run_discovers_commands_when_catalog_is_not_supplied(
         calls += 1
         return catalog
 
-    monkeypatch.setattr("provium_cli.application.discover_command_catalogs", discover)
+    monkeypatch.setattr("provium.cli.application.discover_command_catalogs", discover)
 
     assert run(["example", "hello"]) == 5
     assert calls == 1
@@ -118,9 +117,7 @@ def test_parser_prints_the_installed_version(
         create_parser(CommandCatalog()).parse_args(["--version"])
 
     assert exit_info.value.code == 0
-    assert capsys.readouterr().out == (
-        f"provium {__version__}\nprovium-cli {cli_version}\n"
-    )
+    assert capsys.readouterr().out == f"provium {__version__}\n"
 
 
 def test_main_uses_process_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,8 +127,8 @@ def test_main_uses_process_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
         received.append(arguments)
         return 9
 
-    monkeypatch.setattr("provium_cli.application.run", fake_run)
-    monkeypatch.setattr("provium_cli.application.sys.argv", ["provium", "example"])
+    monkeypatch.setattr("provium.cli.application.run", fake_run)
+    monkeypatch.setattr("provium.cli.application.sys.argv", ["provium", "example"])
 
     assert main() == 9
     assert received == [["example"]]

@@ -5,11 +5,11 @@ Provium requires Python 3.12 or newer.
 ## Installation
 
 ```bash
-python -m pip install provium provium-cli
+python -m pip install provium
 ```
 
-`provium` provides typed artifacts, procedure execution, sessions, and
-provenance. `provium-cli` provides the `provium` command and command plugin API.
+`provium` provides typed artifacts, procedure execution, sessions, provenance,
+the `provium` command, and the command plugin API.
 
 ## Build a plugin
 

@@ -1,17 +1,6 @@
-from __future__ import annotations
-
-import importlib.util
-
-
 def main() -> int:
-    """Delegate module execution to the optional Provium CLI package."""
-    if importlib.util.find_spec("provium_cli") is None:
-        raise SystemExit(
-            "The Provium CLI is not installed. Install it with: "
-            "python3 -m pip install provium-cli"
-        )
-
-    from provium_cli import main as cli_main
+    """Run Provium's bundled command-line interface."""
+    from .cli import main as cli_main
 
     return cli_main()
 

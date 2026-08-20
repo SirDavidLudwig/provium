@@ -4,10 +4,6 @@
     "packages/provium": {
       "package-name": "provium",
       "release-type": "python"
-    },
-    "packages/provium-cli": {
-      "package-name": "provium-cli",
-      "release-type": "python"
     }
   }
 }

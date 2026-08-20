@@ -12,8 +12,8 @@ from support.provium_test_pipeline.artifacts import (
 )
 
 from provium import Artifact, ArtifactDefinition, ImperativeProcedure
-from provium_cli import run
-from provium_cli.commands import catalog as command_catalog
+from provium.cli import run
+from provium.cli.commands import catalog as command_catalog
 
 OTHER_ARTIFACT = ArtifactDefinition(
     "test.OtherTextV1",

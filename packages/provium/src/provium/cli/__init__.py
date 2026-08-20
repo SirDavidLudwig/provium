@@ -7,7 +7,7 @@ from .catalog import CommandCatalog
 from .command import Command
 from .discovery import discover_command_catalogs, reset_command_discovery
 
-__version__ = version("provium-cli")
+__version__ = version("provium")
 
 __all__ = [
     "Command",

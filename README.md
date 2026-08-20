@@ -1,11 +1,11 @@
 # Provium
 
-This repository is a Python monorepo containing two independently published
-packages:
+This repository is a Python monorepo containing the Provium package and its
+example projects:
 
-- [`packages/provium/`](packages/provium/) — the typed core library.
-- [`packages/provium-cli/`](packages/provium-cli/) — the command-line interface and command plugin
-  system.
+- [`packages/provium/`](packages/provium/) — the typed library, command-line
+  interface, and command plugin system.
+- [`examples/`](examples/) — installable example projects.
 
 ## Development
 
@@ -30,5 +30,5 @@ Build the shared documentation site into `site/`:
 make docs
 ```
 
-Each package retains its own `pyproject.toml`, tests, coverage gate, version,
-and build metadata so it can be tested and released independently.
+The Provium package owns its `pyproject.toml`, tests, coverage gate, version,
+and build metadata; examples remain separate projects in the monorepo.

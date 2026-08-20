@@ -1,7 +1,7 @@
 # Provium CLI API reference
 
-The public API exported by `provium_cli`.
+The public API exported by `provium.cli`.
 
-::: provium_cli
+::: provium.cli
     options:
       members: true

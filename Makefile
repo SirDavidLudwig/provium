@@ -3,19 +3,16 @@ PYTHON ?= $(CURDIR)/.venv/bin/python
 .PHONY: install test lint format-check type-check check docs build
 
 install:
-	$(PYTHON) -m pip install -e "./packages/provium[test,docs]" -e "./packages/provium-cli[test]"
+	$(PYTHON) -m pip install -e "./packages/provium[test,docs]"
 
 test:
 	cd packages/provium && $(PYTHON) -m pytest
-	cd packages/provium-cli && $(PYTHON) -m pytest
 
 lint:
 	cd packages/provium && $(PYTHON) -m ruff check src test typecheck
-	cd packages/provium-cli && $(PYTHON) -m ruff check src test
 
 format-check:
 	cd packages/provium && $(PYTHON) -m ruff format --check src test typecheck
-	cd packages/provium-cli && $(PYTHON) -m ruff format --check src test
 
 type-check:
 	cd packages/provium && $(PYTHON) -m pyright
@@ -27,4 +24,3 @@ docs:
 
 build:
 	$(PYTHON) -m build packages/provium --outdir dist/provium
-	$(PYTHON) -m build packages/provium-cli --outdir dist/provium-cli

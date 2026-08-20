@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from support.provium_test_pipeline.contracts import TRANSFORM_PROCEDURE
 
-from provium_cli import run
-from provium_cli.commands import catalog as command_catalog
+from provium.cli import run
+from provium.cli.commands import catalog as command_catalog
 
 
 def test_procedure_list_and_show_use_real_catalog_metadata(
@@ -70,8 +70,8 @@ def test_quick_show_is_lazy_and_resolve_imports_implementations(
         environment["PROVIUM_TEST_IMPORT_SENTINEL"] = str(sentinel)
         script = f"""
 from pathlib import Path
-from provium_cli import run
-from provium_cli.commands import catalog
+from provium.cli import run
+from provium.cli.commands import catalog
 
 status = run(
     ["procedure", "show", "test.TransformTextV1", *{extra_arguments!r}],

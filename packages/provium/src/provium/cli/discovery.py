@@ -6,7 +6,7 @@ from importlib import metadata
 
 from .catalog import CommandCatalog
 
-ENTRY_POINT_GROUP = "provium_cli.command_catalogs"
+ENTRY_POINT_GROUP = "provium.cli.command_catalogs"
 _discovered_catalog: CommandCatalog | None = None
 
 
@@ -16,7 +16,11 @@ def discover_command_catalogs() -> CommandCatalog:
     if _discovered_catalog is not None:
         return _discovered_catalog
 
+    from .commands import catalog as core_catalog
+
     discovered = CommandCatalog()
+    for command in core_catalog.commands.values():
+        discovered.register(command)
     for entry_point in metadata.entry_points(group=ENTRY_POINT_GROUP):
         catalog = entry_point.load()
         if not isinstance(catalog, CommandCatalog):

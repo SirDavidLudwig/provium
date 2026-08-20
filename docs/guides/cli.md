@@ -1,7 +1,7 @@
 # Command-line tools
 
-Install `provium-cli` alongside the core package. Both entry points use the same
-plugin-discovered command catalog:
+The command-line interface is included with `provium`. Both entry points use the
+same plugin-discovered command catalog:
 
 ```bash
 provium --version

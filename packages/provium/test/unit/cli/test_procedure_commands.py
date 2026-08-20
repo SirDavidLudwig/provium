@@ -26,8 +26,8 @@ from provium import (
     output,
     repeated_input,
 )
-from provium_cli import run
-from provium_cli.commands.procedure import ExecuteCommand, ProcedureCommand
+from provium.cli import run
+from provium.cli.commands.procedure import ExecuteCommand, ProcedureCommand
 
 
 class Reader(ArtifactReader):
@@ -101,7 +101,7 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> ProcedureCatalog:
     result = ProcedureCatalog()
     result.register(DEFINITION)
     monkeypatch.setattr(
-        "provium_cli.commands.procedure.discover_procedure_catalogs",
+        "provium.cli.commands.procedure.discover_procedure_catalogs",
         lambda: result,
     )
     return result
@@ -175,7 +175,7 @@ def test_show_handles_empty_contract_without_description(
     discovered = ProcedureCatalog()
     discovered.register(definition)
     monkeypatch.setattr(
-        "provium_cli.commands.procedure.discover_procedure_catalogs",
+        "provium.cli.commands.procedure.discover_procedure_catalogs",
         lambda: discovered,
     )
 
@@ -198,7 +198,7 @@ def test_execute_builds_layered_typed_bindings(
         return ProcedureExecutionResult("execution", None, ())
 
     monkeypatch.setattr(
-        "provium_cli.commands.procedure.ProcedureExecutor.execute", execute
+        "provium.cli.commands.procedure.ProcedureExecutor.execute", execute
     )
 
     assert (
@@ -250,7 +250,7 @@ def test_execute_reports_runtime_failures_as_cli_errors(
         raise RuntimeError("processing failed")
 
     monkeypatch.setattr(
-        "provium_cli.commands.procedure.ProcedureExecutor.execute", fail
+        "provium.cli.commands.procedure.ProcedureExecutor.execute", fail
     )
 
     assert run(["execute", DEFINITION.identifier]) == 2

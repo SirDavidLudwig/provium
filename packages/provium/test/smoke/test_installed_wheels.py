@@ -36,7 +36,6 @@ def test_installed_wheels_complete_external_plugin_workflow(
     distributions.mkdir()
     projects = (
         repository / "packages" / "provium",
-        repository / "packages" / "provium-cli",
         Path(__file__).parent / "example_plugin",
         repository / "examples" / "provium-text-pipeline",
     )
@@ -61,9 +60,9 @@ def test_installed_wheels_complete_external_plugin_workflow(
         str(python),
         "-c",
         (
-            "import provium, provium_cli, provium_example_plugin, "
+            "import provium, provium.cli, provium_example_plugin, "
             "provium_text_pipeline; "
-            "print(provium.__file__); print(provium_cli.__file__); "
+            "print(provium.__file__); print(provium.cli.__file__); "
             "print(provium_example_plugin.__file__); "
             "print(provium_text_pipeline.__file__)"
         ),
@@ -73,7 +72,7 @@ def test_installed_wheels_complete_external_plugin_workflow(
     assert all(Path(path).is_relative_to(environment) for path in imported_paths)
 
     version = run(str(python), "-m", "provium", "--version", cwd=tmp_path)
-    assert version.stdout == "provium 0.5.0\nprovium-cli 0.5.0\n"
+    assert version.stdout == "provium 0.5.0\n"
     listed = run(str(python), "-m", "provium", "procedure", "list", cwd=tmp_path)
     assert "smoke.SourceTextV1\tSource text" in listed.stdout
     assert "smoke.TransformTextV1\tTransform text" in listed.stdout
