@@ -2,6 +2,8 @@
 
 from .catalog import ProcedureCatalog
 from .config import (
+    ConfigurationSnapshot,
+    JsonValue,
     ProcedureConfig,
     compose_configuration,
     load_json_configuration,
@@ -17,6 +19,8 @@ from .definition import (
 from .discovery import discover_procedure_catalogs, reset_procedure_discovery
 
 __all__ = [
+    "ConfigurationSnapshot",
+    "JsonValue",
     "Procedure",
     "ProcedureCatalog",
     "ProcedureConfig",

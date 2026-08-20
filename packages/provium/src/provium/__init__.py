@@ -12,6 +12,8 @@ from .artifact import (
     reset_artifact_discovery,
 )
 from .procedure import (
+    ConfigurationSnapshot,
+    JsonValue,
     Procedure,
     ProcedureCatalog,
     ProcedureConfig,
@@ -34,6 +36,8 @@ __all__ = [
     "ArtifactDefinition",
     "ArtifactReader",
     "ArtifactWriter",
+    "ConfigurationSnapshot",
+    "JsonValue",
     "Procedure",
     "ProcedureCatalog",
     "ProcedureConfig",

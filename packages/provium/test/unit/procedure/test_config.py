@@ -1,13 +1,18 @@
 """Tests for procedure configuration models."""
 
 import json
+import os
+import subprocess
+import sys
+from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
 
 import pytest
-from pydantic import Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from provium import (
+    ConfigurationSnapshot,
     ProcedureConfig,
     compose_configuration,
     load_json_configuration,
@@ -18,6 +23,17 @@ from provium import (
 class ExampleConfig(ProcedureConfig):
     name: str
     retries: int = Field(default=1, ge=1)
+
+
+def canonical_digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
 
 
 def test_configuration_uses_pydantic_validation() -> None:
@@ -113,6 +129,22 @@ def test_configuration_composition_accepts_nested_read_only_mappings() -> None:
     assert compose_configuration([layer, {"nested": {"value": 2}}]) == {
         "nested": {"preserved": True, "value": 2}
     }
+
+
+def test_configuration_composition_rejects_recursive_mappings() -> None:
+    layer: dict[str, object] = {}
+    layer["recursive"] = layer
+
+    with pytest.raises(ValueError, match="recursive mapping"):
+        compose_configuration([layer])
+
+
+def test_configuration_composition_rejects_recursive_sequences() -> None:
+    recursive: list[object] = []
+    recursive.append(recursive)
+
+    with pytest.raises(ValueError, match="recursive sequence"):
+        compose_configuration([{"value": recursive}])
 
 
 def test_json_configuration_loads_an_object(tmp_path: Path) -> None:
@@ -253,3 +285,279 @@ def test_yaml_configuration_accepts_string_and_path_like_paths(
 
     assert load_yaml_configuration(str(path)) == {}
     assert load_yaml_configuration(path) == {}
+
+
+class SnapshotConfig(ProcedureConfig):
+    name: str = "café"
+    retries: int = Field(default=2, alias="retryCount")
+    optional: str | None = None
+
+
+def test_configuration_snapshot_is_canonical_and_includes_defaults() -> None:
+    snapshot = ConfigurationSnapshot.from_configuration(SnapshotConfig())
+    expected_value = {"name": "café", "optional": None, "retryCount": 2}
+
+    assert snapshot.model_target == f"{__name__}:SnapshotConfig"
+    assert snapshot.value == expected_value
+    assert snapshot.value_digest == canonical_digest(expected_value)
+    assert snapshot.schema_digest == canonical_digest(
+        SnapshotConfig.model_json_schema()
+    )
+
+
+def test_configuration_snapshot_matches_explicit_default_values() -> None:
+    implicit = ConfigurationSnapshot.from_configuration(SnapshotConfig())
+    explicit = ConfigurationSnapshot.from_configuration(
+        SnapshotConfig(name="café", retryCount=2, optional=None)
+    )
+
+    assert implicit == explicit
+
+
+def test_configuration_snapshot_is_stable_across_hash_seeds() -> None:
+    script = """
+from provium import ConfigurationSnapshot, ProcedureConfig
+
+class SetConfig(ProcedureConfig):
+    values: set[str]
+
+print(ConfigurationSnapshot.from_configuration(
+    SetConfig(values={"alpha", "beta", "gamma"})
+).value_digest)
+"""
+    digests = {
+        subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            text=True,
+        ).stdout.strip()
+        for seed in range(1, 5)
+    }
+
+    assert len(digests) == 1
+
+
+def test_nested_model_snapshot_is_stable_across_hash_seeds() -> None:
+    script = """
+from pydantic import BaseModel
+from provium import ConfigurationSnapshot, ProcedureConfig
+
+class NestedModel(BaseModel):
+    values: set[str]
+
+class NestedConfig(ProcedureConfig):
+    nested: NestedModel
+
+print(ConfigurationSnapshot.from_configuration(NestedConfig(
+    nested=NestedModel(values={"alpha", "beta", "gamma"})
+)).value_digest)
+"""
+    digests = {
+        subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            text=True,
+        ).stdout.strip()
+        for seed in range(1, 5)
+    }
+
+    assert len(digests) == 1
+
+
+def test_custom_model_serializer_snapshot_is_stable_across_hash_seeds() -> None:
+    script = """
+from pydantic import model_serializer
+from provium import ConfigurationSnapshot, ProcedureConfig
+
+class SerializedConfig(ProcedureConfig):
+    values: set[str]
+
+    @model_serializer
+    def serialize_model(self) -> dict[str, object]:
+        return {"renamed": self.values}
+
+print(ConfigurationSnapshot.from_configuration(
+    SerializedConfig(values={"alpha", "beta", "gamma"})
+).value_digest)
+"""
+    digests = {
+        subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            text=True,
+        ).stdout.strip()
+        for seed in range(1, 5)
+    }
+
+    assert len(digests) == 1
+
+
+def test_configuration_snapshot_correlates_a_single_renamed_field() -> None:
+    from pydantic import model_serializer
+
+    class RenamedConfig(ProcedureConfig):
+        values: set[str]
+
+        @model_serializer(when_used="json")
+        def serialize_model(self) -> dict[str, object]:
+            return {"renamed": self.values}
+
+    snapshot = ConfigurationSnapshot.from_configuration(
+        RenamedConfig(values={"gamma", "alpha", "beta"})
+    )
+
+    assert snapshot.value == {"renamed": ["alpha", "beta", "gamma"]}
+
+
+def test_configuration_snapshot_supports_a_shape_changing_model_serializer() -> None:
+    from pydantic import model_serializer
+
+    class CombinedConfig(ProcedureConfig):
+        first: int
+        second: int
+
+        @model_serializer(when_used="json")
+        def serialize_model(self) -> dict[str, int]:
+            return {"total": self.first + self.second}
+
+    snapshot = ConfigurationSnapshot.from_configuration(
+        CombinedConfig(first=2, second=3)
+    )
+
+    assert snapshot.value == {"total": 5}
+
+
+def test_configuration_snapshot_supports_a_shape_changing_field_serializer() -> None:
+    from pydantic import field_serializer
+
+    class TruncatedConfig(ProcedureConfig):
+        values: list[int]
+        tags: set[str]
+
+        @field_serializer("values", when_used="json")
+        def serialize_values(self, values: list[int]) -> list[int]:
+            return values[:1]
+
+        @field_serializer("tags", when_used="json")
+        def serialize_tags(self, tags: set[str]) -> list[str]:
+            return [min(tags)]
+
+    snapshot = ConfigurationSnapshot.from_configuration(
+        TruncatedConfig(values=[1, 2, 3], tags={"alpha", "beta"})
+    )
+
+    assert snapshot.value == {"tags": ["alpha"], "values": [1]}
+
+
+def test_configuration_snapshot_correlates_reordered_serialized_fields_by_name() -> (
+    None
+):
+    from pydantic import model_serializer
+
+    class ReorderedConfig(ProcedureConfig):
+        unordered: set[str]
+        ordered: list[str]
+
+        @model_serializer(when_used="json")
+        def serialize_model(self) -> dict[str, object]:
+            return {"ordered": self.ordered, "unordered": self.unordered}
+
+    snapshot = ConfigurationSnapshot.from_configuration(
+        ReorderedConfig(
+            unordered={"gamma", "alpha", "beta"},
+            ordered=["gamma", "alpha", "beta"],
+        )
+    )
+
+    assert snapshot.value == {
+        "ordered": ["gamma", "alpha", "beta"],
+        "unordered": ["alpha", "beta", "gamma"],
+    }
+
+
+def test_configuration_snapshot_does_not_guess_partially_replaced_fields() -> None:
+    from pydantic import model_serializer
+
+    class ReplacedConfig(ProcedureConfig):
+        unordered: set[str]
+        preserved: int
+
+        @model_serializer(when_used="json")
+        def serialize_model(self) -> dict[str, object]:
+            return {
+                "preserved": self.preserved,
+                "added": ["gamma", "alpha", "beta"],
+            }
+
+    snapshot = ConfigurationSnapshot.from_configuration(
+        ReplacedConfig(unordered={"gamma", "alpha", "beta"}, preserved=1)
+    )
+
+    assert snapshot.value == {
+        "added": ["gamma", "alpha", "beta"],
+        "preserved": 1,
+    }
+
+
+def test_configuration_snapshot_canonicalizes_unordered_collections() -> None:
+    class NestedCollectionModel(BaseModel):
+        values: set[str]
+
+    class CollectionConfig(ProcedureConfig):
+        values: set[str]
+        frozen_values: frozenset[str]
+        ordered_values: list[str]
+        nested_values: dict[str, frozenset[str]]
+        tuple_values: tuple[str, ...]
+        nested_model: NestedCollectionModel
+
+    snapshot = ConfigurationSnapshot.from_configuration(
+        CollectionConfig(
+            values={"gamma", "alpha", "beta"},
+            frozen_values=frozenset({"gamma", "alpha", "beta"}),
+            ordered_values=["gamma", "alpha", "beta"],
+            nested_values={"inner": frozenset({"gamma", "alpha", "beta"})},
+            tuple_values=("gamma", "alpha", "beta"),
+            nested_model=NestedCollectionModel(values={"gamma", "alpha", "beta"}),
+        )
+    )
+
+    assert snapshot.value == {
+        "frozen_values": ["alpha", "beta", "gamma"],
+        "nested_values": {"inner": ["alpha", "beta", "gamma"]},
+        "nested_model": {"values": ["alpha", "beta", "gamma"]},
+        "ordered_values": ["gamma", "alpha", "beta"],
+        "tuple_values": ["gamma", "alpha", "beta"],
+        "values": ["alpha", "beta", "gamma"],
+    }
+
+
+def test_configuration_snapshot_is_frozen() -> None:
+    snapshot = ConfigurationSnapshot.from_configuration(SnapshotConfig())
+
+    with pytest.raises(AttributeError):
+        snapshot.value_digest = "different"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_configuration_snapshot_rejects_non_finite_numbers(value: float) -> None:
+    class FloatConfig(ProcedureConfig):
+        value: float
+
+    with pytest.raises(ValueError, match="finite"):
+        ConfigurationSnapshot.from_configuration(FloatConfig(value=value))
+
+
+@pytest.mark.parametrize("key", [float("nan"), float("inf"), float("-inf")])
+def test_configuration_snapshot_rejects_non_finite_mapping_keys(key: float) -> None:
+    class MappingConfig(ProcedureConfig):
+        values: dict[float, str]
+
+    with pytest.raises(ValueError, match="finite"):
+        ConfigurationSnapshot.from_configuration(MappingConfig(values={key: "value"}))
