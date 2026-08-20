@@ -1,11 +1,13 @@
 """Tests for reusable prepared procedure instances."""
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Event
 
 import pytest
 
 from provium import (
+    CancellationToken,
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
@@ -301,3 +303,80 @@ def test_close_preserves_procedure_error_when_resource_cleanup_also_fails(
 
     assert caught.value is procedure_error
     assert caught.value.__cause__ is cleanup_error
+
+
+def test_setup_and_process_temporary_directories_have_scoped_lifetimes() -> None:
+    setup_directory: Path | None = None
+    process_directory: Path | None = None
+    setup_exists_during_close = False
+
+    class TemporaryDirectoryProcedure(CounterProcedure):
+        def setup(
+            self,
+            context: ProcedureSetupContext,
+            configuration: Config,
+            inputs: SetupInputs,
+        ) -> None:
+            nonlocal setup_directory
+            setup_directory = context.temporary_directory
+            (setup_directory / "setup.txt").write_text("setup")
+
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: Config,
+            inputs: Inputs,
+            outputs: Outputs,
+        ) -> None:
+            nonlocal process_directory
+            process_directory = context.temporary_directory
+            assert setup_directory is not None
+            assert (setup_directory / "setup.txt").read_text() == "setup"
+            (process_directory / "process.txt").write_text("process")
+
+        def close(self) -> None:
+            nonlocal setup_exists_during_close
+            assert setup_directory is not None
+            setup_exists_during_close = setup_directory.exists()
+
+    prepared, _, _ = prepare(TemporaryDirectoryProcedure())
+    assert setup_directory is not None and setup_directory.exists()
+
+    prepared.execute(
+        inputs=Inputs._from_bindings({}),
+        outputs=Outputs._from_bindings({}),
+    )
+
+    assert process_directory is not None and not process_directory.exists()
+    assert setup_directory.exists()
+    prepared.close()
+    assert setup_exists_during_close
+    assert not setup_directory.exists()
+
+
+def test_cancelled_execution_does_not_call_process() -> None:
+    prepared, procedure, _ = prepare()
+    token = CancellationToken()
+    token.cancel()
+
+    with pytest.raises(RuntimeError, match="procedure execution was cancelled"):
+        prepared.execute(
+            inputs=Inputs._from_bindings({}),
+            outputs=Outputs._from_bindings({}),
+            cancellation=token,
+        )
+
+    assert procedure.process_contexts == []
+
+
+def test_process_receives_the_execution_cancellation_token() -> None:
+    prepared, procedure, _ = prepare()
+    token = CancellationToken()
+
+    prepared.execute(
+        inputs=Inputs._from_bindings({}),
+        outputs=Outputs._from_bindings({}),
+        cancellation=token,
+    )
+
+    assert procedure.process_contexts[0].cancellation is token

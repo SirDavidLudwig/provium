@@ -1,8 +1,11 @@
 """Tests for the base stateful procedure lifecycle interface."""
 
+from pathlib import Path
+
 import pytest
 
 from provium import (
+    CancellationToken,
     Procedure,
     ProcedureConfig,
     ProcedureInputs,
@@ -10,6 +13,33 @@ from provium import (
     ProcedureProcessContext,
     ProcedureSetupContext,
 )
+
+
+def test_cancellation_token_is_thread_safe_and_idempotent() -> None:
+    token = CancellationToken()
+
+    assert token.cancelled is False
+    token.raise_if_cancelled()
+    token.cancel()
+    token.cancel()
+
+    assert token.cancelled is True
+    with pytest.raises(RuntimeError, match="procedure execution was cancelled"):
+        token.raise_if_cancelled()
+
+
+def test_lifecycle_contexts_expose_cancellation_and_temporary_directory(
+    tmp_path: Path,
+) -> None:
+    token = CancellationToken()
+
+    setup = ProcedureSetupContext(token, tmp_path)
+    process = ProcedureProcessContext(token, tmp_path)
+
+    assert setup.cancellation is token
+    assert setup.temporary_directory == tmp_path
+    assert process.cancellation is token
+    assert process.temporary_directory == tmp_path
 
 
 class Config(ProcedureConfig):

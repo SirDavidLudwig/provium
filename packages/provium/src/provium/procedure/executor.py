@@ -7,6 +7,7 @@ from typing import Any, Never, cast
 from provium.artifact import ArtifactReadBinding, ArtifactWriteBinding
 
 from .config import ProcedureConfig, compose_configuration
+from .context import CancellationToken
 from .definition import Procedure, ProcedureDefinition
 from .io import (
     ProcedureInputs,
@@ -49,6 +50,7 @@ class ProcedureExecutor:
         setup_inputs: Mapping[str, ReadBindingValue] | None = None,
         inputs: Mapping[str, ReadBindingValue],
         outputs: Mapping[str, ArtifactWriteBinding[Any]],
+        cancellation: CancellationToken | None = None,
     ) -> ProcedureExecutionResult:
         """Prepare, process one invocation, and close the procedure."""
         prepared = self.prepare(
@@ -59,7 +61,11 @@ class ProcedureExecutor:
         try:
             process_inputs = self._prepare_process_inputs(definition, inputs)
             process_outputs = self._prepare_process_outputs(definition, outputs)
-            result = prepared.execute(inputs=process_inputs, outputs=process_outputs)
+            result = prepared.execute(
+                inputs=process_inputs,
+                outputs=process_outputs,
+                cancellation=cancellation,
+            )
         except BaseException as error:
             self._close_after_failure(prepared, error)
         prepared.close()

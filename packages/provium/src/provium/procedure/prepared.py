@@ -1,6 +1,7 @@
 """Reusable prepared procedure instances."""
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any, Never, cast
 from uuid import uuid4
@@ -11,11 +12,20 @@ from provium.session import PersistentSession, Session, session
 
 from .authorization import authorize_bindings
 from .config import ConfigurationSnapshot, ProcedureConfig
-from .context import ProcedureProcessContext, ProcedureSetupContext
+from .context import CancellationToken, ProcedureProcessContext, ProcedureSetupContext
 from .definition import Procedure, ProcedureDefinition
 from .execution import ProcedureExecutionSession
 from .io import ProcedureInputs, ProcedureOutputs
 from .result import ProcedureExecutionResult
+
+
+class _SetupTemporaryDirectory:
+    def __init__(self) -> None:
+        self._directory = TemporaryDirectory(prefix="provium-setup-")
+        self.path = Path(self._directory.name)
+
+    def close(self) -> None:
+        self._directory.cleanup()
 
 
 class PreparedProcedure[
@@ -37,6 +47,7 @@ class PreparedProcedure[
         self._active = False
         self._closed = False
         self._setup_session = PersistentSession()
+        self._setup_temporary_directory = _SetupTemporaryDirectory()
         self._setup_bindings = self._input_bindings(setup_inputs)
         self._setup_identities: dict[int, str] = {}
         try:
@@ -46,6 +57,7 @@ class PreparedProcedure[
 
     def _run_setup(self, setup_inputs: ProcedureInputs) -> None:
         with self._setup_session:
+            self._setup_session.manage(self._setup_temporary_directory)
             with authorize_bindings(self._setup_bindings, {}, {}):
                 self._setup_identities = self._register_inputs(self._setup_bindings)
             with authorize_bindings(
@@ -55,7 +67,9 @@ class PreparedProcedure[
                 input_identities=self._setup_identities,
             ):
                 self._procedure.setup(
-                    ProcedureSetupContext(),
+                    ProcedureSetupContext(
+                        temporary_directory=self._setup_temporary_directory.path
+                    ),
                     self._configuration,
                     setup_inputs,
                 )
@@ -66,13 +80,21 @@ class PreparedProcedure[
         return self._configuration
 
     def execute(
-        self, *, inputs: InputsT, outputs: OutputsT
+        self,
+        *,
+        inputs: InputsT,
+        outputs: OutputsT,
+        cancellation: CancellationToken | None = None,
     ) -> ProcedureExecutionResult:
         """Process one invocation on the prepared instance."""
         self._begin_execution()
         try:
-            with self._setup_session:
-                return self._execute_active(inputs, outputs)
+            token = cancellation or CancellationToken()
+            token.raise_if_cancelled()
+            with TemporaryDirectory(prefix="provium-process-") as directory:
+                context = ProcedureProcessContext(token, Path(directory))
+                with self._setup_session:
+                    return self._execute_active(inputs, outputs, context)
         finally:
             self._finish_execution()
 
@@ -80,6 +102,7 @@ class PreparedProcedure[
         self,
         inputs: InputsT,
         outputs: OutputsT,
+        context: ProcedureProcessContext,
     ) -> ProcedureExecutionResult:
         input_bindings = self._input_bindings(inputs)
         output_bindings = self._output_bindings(outputs)
@@ -89,11 +112,14 @@ class PreparedProcedure[
                 outputs,
                 input_bindings,
                 output_bindings,
+                context,
             )
         if input_bindings:
-            return self._execute_without_outputs(inputs, outputs, input_bindings)
+            return self._execute_without_outputs(
+                inputs, outputs, input_bindings, context
+            )
         with authorize_bindings((), {}, {}):
-            self._process(inputs, outputs)
+            self._process(inputs, outputs, context)
         return self._execution_result(self._setup_session)
 
     def _execute_with_outputs(
@@ -102,6 +128,7 @@ class PreparedProcedure[
         outputs: OutputsT,
         input_bindings: tuple[ArtifactReadBinding[Any], ...],
         output_bindings: dict[str, ArtifactWriteBinding[Any]],
+        context: ProcedureProcessContext,
     ) -> ProcedureExecutionResult:
         procedure = self._procedure_record()
         self._validate_output_destinations(output_bindings, procedure.name)
@@ -115,7 +142,7 @@ class PreparedProcedure[
                 writers,
                 input_identities=identities,
             ):
-                self._process(inputs, outputs)
+                self._process(inputs, outputs, context)
         return cast(ProcedureExecutionResult, execution.result)
 
     def _execute_without_outputs(
@@ -123,6 +150,7 @@ class PreparedProcedure[
         inputs: InputsT,
         outputs: OutputsT,
         input_bindings: tuple[ArtifactReadBinding[Any], ...],
+        context: ProcedureProcessContext,
     ) -> ProcedureExecutionResult:
         with session() as active:
             with authorize_bindings(input_bindings, {}, {}):
@@ -133,12 +161,18 @@ class PreparedProcedure[
                 {},
                 input_identities=identities,
             ):
-                self._process(inputs, outputs)
+                self._process(inputs, outputs, context)
             return self._execution_result(active)
 
-    def _process(self, inputs: InputsT, outputs: OutputsT) -> None:
+    def _process(
+        self,
+        inputs: InputsT,
+        outputs: OutputsT,
+        context: ProcedureProcessContext,
+    ) -> None:
+        context.cancellation.raise_if_cancelled()
         self._procedure.process(
-            ProcedureProcessContext(),
+            context,
             self._configuration,
             inputs,
             outputs,

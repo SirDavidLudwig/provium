@@ -9,7 +9,12 @@ from .config import (
     load_json_configuration,
     load_yaml_configuration,
 )
-from .context import ProcedureProcessContext, ProcedureSetupContext
+from .context import (
+    CancellationToken,
+    ProcedureCancelledError,
+    ProcedureProcessContext,
+    ProcedureSetupContext,
+)
 from .definition import (
     Procedure,
     ProcedureContract,
@@ -44,10 +49,12 @@ from .validation import (
 
 __all__ = [
     "ConfigurationSnapshot",
+    "CancellationToken",
     "JsonValue",
     "PreparedProcedure",
     "Procedure",
     "ProcedureCatalog",
+    "ProcedureCancelledError",
     "ProcedureConfig",
     "ProcedureConfigurationError",
     "ProcedureContract",

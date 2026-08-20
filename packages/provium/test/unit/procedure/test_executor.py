@@ -16,6 +16,7 @@ from provium import (
     ArtifactRecord,
     ArtifactReference,
     ArtifactWriter,
+    CancellationToken,
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
@@ -359,6 +360,31 @@ def test_execute_runs_one_typed_invocation_and_closes(
     assert isinstance(procedure.process_inputs, Contract.Inputs)
     assert isinstance(procedure.process_outputs, Contract.Outputs)
     assert procedure.process_configuration is procedure.setup_configuration
+    assert procedure.close_calls == 1
+
+
+def test_execute_forwards_cancellation_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ProcedureDefinition,
+        "resolve",
+        lambda self: ExecutorProcedure,
+    )
+    token = CancellationToken()
+    token.cancel()
+
+    with pytest.raises(RuntimeError, match="procedure execution was cancelled"):
+        ProcedureExecutor().execute(
+            DEFINITION,
+            inputs={},
+            outputs={},
+            cancellation=token,
+        )
+
+    assert len(ExecutorProcedure.instances) == 1
+    procedure = ExecutorProcedure.instances[0]
+    assert procedure.process_inputs is None
     assert procedure.close_calls == 1
 
 
