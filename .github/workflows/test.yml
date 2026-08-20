@@ -2,7 +2,12 @@ name: Tests
 
 on:
   push:
+    branches: [master]
   pull_request:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -37,7 +42,7 @@ jobs:
         working-directory: examples/provium-text-pipeline
         run: ruff format --check src test
   test:
-    name: Provium (Python ${{ matrix.python-version }})
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: lint-format
     timeout-minutes: 10
