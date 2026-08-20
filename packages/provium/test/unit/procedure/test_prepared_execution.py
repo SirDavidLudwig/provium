@@ -1,5 +1,6 @@
-"""Tests for prepared procedure output execution."""
+"""Tests for prepared procedure artifact execution."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -8,24 +9,35 @@ from pydantic import Field
 from provium import (
     Artifact,
     ArtifactDefinition,
+    ArtifactHeader,
+    ArtifactLineage,
     ArtifactReader,
+    ArtifactRecord,
+    ArtifactReference,
     ArtifactWriter,
     PreparedProcedure,
     Procedure,
     ProcedureConfig,
     ProcedureContract,
     ProcedureDefinition,
+    ProcedureExecutionRecord,
     ProcedureInputs,
     ProcedureOutputs,
     ProcedureProcessContext,
+    ProcedureRecord,
     decode_header,
+    encode_header,
+    input,
+    optional_input,
     output,
+    repeated_input,
     session,
 )
 
 
 class BytesReader(ArtifactReader):
-    pass
+    def read(self) -> bytes:
+        return self.body.read()
 
 
 class BytesWriter(ArtifactWriter):
@@ -44,6 +56,27 @@ class BytesArtifact(Artifact[BytesReader, BytesWriter]):
     definition = BYTES
     reader = BytesReader
     writer = BytesWriter
+
+
+def write_source(path: Path, identity: str, body: bytes) -> ArtifactRecord:
+    reference = ArtifactReference(identity, BYTES.identifier)
+    digest = hashlib.sha256(body).hexdigest()
+    execution = ProcedureExecutionRecord(
+        f"{identity}-execution",
+        ProcedureRecord("example.SourceV1", "source-contract"),
+        outputs=(reference,),
+    )
+    record = ArtifactRecord(reference, digest, execution.identity)
+    lineage = ArtifactLineage.for_execution(execution, (record,))
+    header = ArtifactHeader.create(
+        artifact_identifier=reference.artifact_identifier,
+        artifact_identity=reference.identity,
+        body_length=len(body),
+        body_digest=digest,
+        lineage=lineage,
+    )
+    path.write_bytes(encode_header(header) + body)
+    return record
 
 
 class Contract(ProcedureContract[None]):
@@ -264,3 +297,281 @@ def test_no_output_callback_still_rejects_undeclared_write_binding(
             inputs=ProcedureInputs._from_bindings({}),
             outputs=EmptyOutputs._from_bindings({}),
         )
+
+
+class InputContract(ProcedureContract[None]):
+    class Inputs(ProcedureInputs):
+        source = input(BYTES)
+
+    class Outputs(ProcedureOutputs):
+        result = output(BYTES)
+
+
+INPUT_DEFINITION = ProcedureDefinition(
+    "example.PreparedInputV1",
+    f"{__name__}:InputProcedure",
+    "Consume input",
+    None,
+    InputContract,
+)
+
+
+class InputProcedure(
+    Procedure[
+        None,
+        InputContract.SetupInputs,
+        InputContract.Inputs,
+        InputContract.Outputs,
+    ]
+):
+    definition = INPUT_DEFINITION
+
+    def process(
+        self,
+        context: ProcedureProcessContext,
+        configuration: None,
+        inputs: InputContract.Inputs,
+        outputs: InputContract.Outputs,
+    ) -> None:
+        with inputs.source.open() as reader:
+            value = reader.read()
+        outputs.result.open().write(value)
+
+
+def prepare_input(
+    procedure: InputProcedure | None = None,
+) -> PreparedProcedure[None, InputContract.Inputs, InputContract.Outputs]:
+    return PreparedProcedure(
+        InputProcedure() if procedure is None else procedure,
+        None,
+        InputContract.SetupInputs._from_bindings({}),
+    )
+
+
+def test_declared_input_is_authorized_and_registered_before_callback(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source.pa"
+    source_record = write_source(source_path, "source", b"source body")
+    destination = tmp_path / "result.pa"
+
+    with session():
+        prepare_input().execute(
+            inputs=InputContract.Inputs._from_bindings(
+                {"source": BytesArtifact.bind_read(source_path)}
+            ),
+            outputs=InputContract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    header = decode_header(destination.read_bytes())
+    output_record = header.lineage.artifact(
+        ArtifactReference(header.artifact_identity, header.artifact_identifier)
+    )
+    execution = header.lineage.producing_execution(output_record.reference)
+    assert execution.inputs == (source_record.reference,)
+    assert destination.read_bytes()[header.body_offset :] == b"source body"
+
+
+def test_unopened_declared_input_is_still_registered(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.pa"
+    source_record = write_source(source_path, "unused-source", b"unused")
+    destination = tmp_path / "result.pa"
+
+    class IgnoringProcedure(InputProcedure):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: InputContract.Inputs,
+            outputs: InputContract.Outputs,
+        ) -> None:
+            outputs.result.open().write(b"result")
+
+    with session():
+        prepare_input(IgnoringProcedure()).execute(
+            inputs=InputContract.Inputs._from_bindings(
+                {"source": BytesArtifact.bind_read(source_path)}
+            ),
+            outputs=InputContract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    header = decode_header(destination.read_bytes())
+    execution = next(
+        execution
+        for execution in header.lineage.executions.values()
+        if execution.procedure.name == INPUT_DEFINITION.identifier
+    )
+    assert execution.inputs == (source_record.reference,)
+
+
+def test_callback_rejects_equal_but_undeclared_input_binding(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source.pa"
+    write_source(source_path, "source", b"source")
+    destination = tmp_path / "result.pa"
+
+    class UndeclaredInputProcedure(InputProcedure):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: InputContract.Inputs,
+            outputs: InputContract.Outputs,
+        ) -> None:
+            BytesArtifact.bind_read(source_path).open()
+
+    with session(), pytest.raises(RuntimeError, match="not declared"):
+        prepare_input(UndeclaredInputProcedure()).execute(
+            inputs=InputContract.Inputs._from_bindings(
+                {"source": BytesArtifact.bind_read(source_path)}
+            ),
+            outputs=InputContract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    assert not destination.exists()
+
+
+def test_repeated_inputs_are_registered_in_supplied_order(tmp_path: Path) -> None:
+    class RepeatedContract(ProcedureContract[None]):
+        class Inputs(ProcedureInputs):
+            sources = repeated_input(BYTES, minimum=2)
+
+        class Outputs(ProcedureOutputs):
+            result = output(BYTES)
+
+    definition = ProcedureDefinition(
+        "example.RepeatedInputV1",
+        f"{__name__}:RepeatedProcedure",
+        "Consume repeated inputs",
+        None,
+        RepeatedContract,
+    )
+
+    class RepeatedProcedure(
+        Procedure[
+            None,
+            RepeatedContract.SetupInputs,
+            RepeatedContract.Inputs,
+            RepeatedContract.Outputs,
+        ]
+    ):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: RepeatedContract.Inputs,
+            outputs: RepeatedContract.Outputs,
+        ) -> None:
+            outputs.result.open().write(b"result")
+
+    RepeatedProcedure.definition = definition
+    first_path = tmp_path / "first.pa"
+    second_path = tmp_path / "second.pa"
+    first = write_source(first_path, "first", b"first")
+    second = write_source(second_path, "second", b"second")
+    destination = tmp_path / "result.pa"
+    prepared = PreparedProcedure(
+        RepeatedProcedure(),
+        None,
+        RepeatedContract.SetupInputs._from_bindings({}),
+    )
+
+    with session():
+        prepared.execute(
+            inputs=RepeatedContract.Inputs._from_bindings(
+                {
+                    "sources": (
+                        BytesArtifact.bind_read(second_path),
+                        BytesArtifact.bind_read(first_path),
+                    )
+                }
+            ),
+            outputs=RepeatedContract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    header = decode_header(destination.read_bytes())
+    execution = next(
+        execution
+        for execution in header.lineage.executions.values()
+        if execution.procedure.name == definition.identifier
+    )
+    assert execution.inputs == (second.reference, first.reference)
+
+
+def test_declared_input_cannot_change_identity_after_preregistration(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source.pa"
+    write_source(source_path, "original", b"original")
+    destination = tmp_path / "result.pa"
+
+    class ReplacingProcedure(InputProcedure):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: InputContract.Inputs,
+            outputs: InputContract.Outputs,
+        ) -> None:
+            write_source(source_path, "replacement", b"replacement")
+            inputs.source.open()
+
+    with session(), pytest.raises(RuntimeError, match="changed after registration"):
+        prepare_input(ReplacingProcedure()).execute(
+            inputs=InputContract.Inputs._from_bindings(
+                {"source": BytesArtifact.bind_read(source_path)}
+            ),
+            outputs=InputContract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    assert not destination.exists()
+
+
+def test_input_only_callback_uses_authorized_child_session(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.pa"
+    write_source(source_path, "source", b"input only")
+    values: list[bytes] = []
+
+    class InputOnlyInputs(ProcedureInputs):
+        source = input(BYTES)
+        omitted = optional_input(BYTES)
+
+    class InputOnlyProcedure(
+        Procedure[None, ProcedureInputs, InputOnlyInputs, ProcedureOutputs]
+    ):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: InputOnlyInputs,
+            outputs: ProcedureOutputs,
+        ) -> None:
+            with inputs.source.open() as reader:
+                values.append(reader.read())
+
+    prepared = PreparedProcedure(
+        InputOnlyProcedure(),
+        None,
+        ProcedureInputs._from_bindings({}),
+    )
+    with session() as parent:
+        prepared.execute(
+            inputs=InputOnlyInputs._from_bindings(
+                {"source": BytesArtifact.bind_read(source_path)}
+            ),
+            outputs=ProcedureOutputs._from_bindings({}),
+        )
+        assert parent.inputs == ()
+
+    assert values == [b"input only"]

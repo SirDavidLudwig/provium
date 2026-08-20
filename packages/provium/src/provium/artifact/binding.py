@@ -86,12 +86,18 @@ class ArtifactReadBinding[ReaderT: ArtifactReader]:
 
     def open(self) -> ReaderT:
         """Open this artifact within the active resource session."""
+        from provium.procedure.authorization import expected_input_identity
         from provium.session import current_session
 
+        expected_identity = expected_input_identity(self)
         active = current_session()
         if active is None:
             raise RuntimeError("artifact opening requires an active session")
-        return cast(ReaderT, active.open_artifact(self))
+        reader = cast(ReaderT, active.open_artifact(self))
+        if expected_identity is not None and reader.identity != expected_identity:
+            reader.close()
+            raise RuntimeError("artifact input identity changed after registration")
+        return reader
 
 
 @dataclass(frozen=True, slots=True)

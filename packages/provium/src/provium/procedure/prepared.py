@@ -3,10 +3,11 @@
 from threading import Lock
 from typing import Any, cast
 
-from provium.artifact import ArtifactWriteBinding
+from provium.artifact import ArtifactReadBinding, ArtifactWriteBinding
 from provium.provenance import ProcedureRecord
+from provium.session import session
 
-from .authorization import authorize_outputs
+from .authorization import authorize_bindings
 from .config import ConfigurationSnapshot, ProcedureConfig
 from .context import ProcedureProcessContext, ProcedureSetupContext
 from .definition import Procedure
@@ -43,11 +44,19 @@ class PreparedProcedure[
         """Process one invocation on the prepared instance."""
         self._begin_execution()
         try:
+            input_bindings = self._input_bindings(inputs)
             output_bindings = self._output_bindings(outputs)
             if output_bindings:
-                self._execute_with_outputs(inputs, outputs, output_bindings)
+                self._execute_with_outputs(
+                    inputs,
+                    outputs,
+                    input_bindings,
+                    output_bindings,
+                )
+            elif input_bindings:
+                self._execute_without_outputs(inputs, outputs, input_bindings)
             else:
-                with authorize_outputs({}, {}):
+                with authorize_bindings((), {}, {}):
                     self._process(inputs, outputs)
         finally:
             self._finish_execution()
@@ -56,11 +65,36 @@ class PreparedProcedure[
         self,
         inputs: InputsT,
         outputs: OutputsT,
-        bindings: dict[str, ArtifactWriteBinding[Any]],
+        input_bindings: tuple[ArtifactReadBinding[Any], ...],
+        output_bindings: dict[str, ArtifactWriteBinding[Any]],
     ) -> None:
         with ProcedureExecutionSession(self._procedure_record()) as execution:
-            writers = execution.stage_outputs(bindings)
-            with authorize_outputs(bindings, writers):
+            with authorize_bindings(input_bindings, {}, {}):
+                identities = self._register_inputs(input_bindings)
+            writers = execution.stage_outputs(output_bindings)
+            with authorize_bindings(
+                input_bindings,
+                output_bindings,
+                writers,
+                input_identities=identities,
+            ):
+                self._process(inputs, outputs)
+
+    def _execute_without_outputs(
+        self,
+        inputs: InputsT,
+        outputs: OutputsT,
+        input_bindings: tuple[ArtifactReadBinding[Any], ...],
+    ) -> None:
+        with session():
+            with authorize_bindings(input_bindings, {}, {}):
+                identities = self._register_inputs(input_bindings)
+            with authorize_bindings(
+                input_bindings,
+                {},
+                {},
+                input_identities=identities,
+            ):
                 self._process(inputs, outputs)
 
     def _process(self, inputs: InputsT, outputs: OutputsT) -> None:
@@ -72,6 +106,19 @@ class PreparedProcedure[
         )
 
     @staticmethod
+    def _input_bindings(
+        inputs: ProcedureInputs,
+    ) -> tuple[ArtifactReadBinding[Any], ...]:
+        values = cast(dict[str, object], object.__getattribute__(inputs, "_values"))
+        bindings: list[ArtifactReadBinding[Any]] = []
+        for value in values.values():
+            if isinstance(value, tuple):
+                bindings.extend(cast(tuple[ArtifactReadBinding[Any], ...], value))
+            elif value is not None:
+                bindings.append(cast(ArtifactReadBinding[Any], value))
+        return tuple(bindings)
+
+    @staticmethod
     def _output_bindings(
         outputs: ProcedureOutputs,
     ) -> dict[str, ArtifactWriteBinding[Any]]:
@@ -81,6 +128,17 @@ class PreparedProcedure[
             for name, value in values.items()
             if isinstance(value, ArtifactWriteBinding)
         }
+
+    @staticmethod
+    def _register_inputs(
+        bindings: tuple[ArtifactReadBinding[Any], ...],
+    ) -> dict[int, str]:
+        identities: dict[int, str] = {}
+        for binding in bindings:
+            reader = binding.open()
+            identities[id(binding)] = reader.identity
+            reader.close()
+        return identities
 
     def _procedure_record(self) -> ProcedureRecord:
         definition = self._procedure.definition

@@ -54,7 +54,7 @@ def test_procedure_record_preserves_its_configuration_snapshot() -> None:
         ProcedureRecord("example.DetectV1", "contract-digest", config_codec="")
 
 
-def test_execution_normalizes_edges_and_rejects_invalid_graph_values() -> None:
+def test_execution_preserves_input_order_and_rejects_invalid_graph_values() -> None:
     first = ArtifactReference("first", "example.ImageV1")
     second = ArtifactReference("second", "example.ImageV1")
     output = ArtifactReference("output", "example.ImageV1")
@@ -67,7 +67,7 @@ def test_execution_normalizes_edges_and_rejects_invalid_graph_values() -> None:
         outputs=(output,),
     )
 
-    assert execution.inputs == (first, second)
+    assert execution.inputs == (second, first)
     assert execution.outputs == (output,)
 
     with pytest.raises(ValueError, match="identity"):

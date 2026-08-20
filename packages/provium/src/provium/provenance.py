@@ -166,7 +166,6 @@ class ProcedureExecutionRecord(_SerializableRecord):
         self._validate_references(self.inputs, "input")
         self._validate_references(self.outputs, "output")
         self._validate_edge_directions()
-        object.__setattr__(self, "inputs", self._normalized(self.inputs))
         object.__setattr__(self, "outputs", self._normalized(self.outputs))
 
     @staticmethod
