@@ -88,8 +88,14 @@ def test_installed_wheels_complete_external_plugin_workflow(
     assert len(imported_paths) == 4
     assert all(Path(path).is_relative_to(environment) for path in imported_paths)
 
+    installed_version = run(
+        str(python),
+        "-c",
+        "from importlib.metadata import version; print(version('provium'))",
+        cwd=tmp_path,
+    ).stdout.strip()
     version = run(str(python), "-m", "provium", "--version", cwd=tmp_path)
-    assert version.stdout == "provium 0.5.0\n"
+    assert version.stdout == f"provium {installed_version}\n"
     listed = run(str(python), "-m", "provium", "procedure", "list", cwd=tmp_path)
     assert "smoke.SourceTextV1\tSource text" in listed.stdout
     assert "smoke.TransformTextV1\tTransform text" in listed.stdout
