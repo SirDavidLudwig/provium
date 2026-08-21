@@ -109,13 +109,17 @@ class Session:
 
     def open_artifact(self, binding: ArtifactReadBinding[Any]) -> ArtifactReader:
         """Open and verify one typed artifact binding."""
+        from provium.procedure.authorization import expected_input_identity
+
         if not self.active or current_context() is not self:
             raise RuntimeError("artifact opening requires the active session")
+        expected_identity = expected_input_identity(binding)
         stream = Path(binding.path).open("rb")
         try:
             header, file_length = self._read_header(stream)
             expected_identifier = binding.artifact.definition.identifier
             self._validate_opened_header(header, file_length, expected_identifier)
+            self._validate_expected_identity(header, expected_identity)
             self._verify_digest(
                 stream, header.body_offset, header.body_length, header.body_digest
             )
@@ -145,6 +149,17 @@ class Session:
         self._inputs.setdefault(record.reference.identity, record)
         self._input_lineage = merged_lineage
         return reader
+
+    @staticmethod
+    def _validate_expected_identity(
+        header: ArtifactHeader,
+        expected_identity: str | None,
+    ) -> None:
+        if (
+            expected_identity is not None
+            and header.artifact_identity != expected_identity
+        ):
+            raise RuntimeError("artifact input identity changed after registration")
 
     @staticmethod
     def _read_header(stream: BinaryIO) -> tuple[ArtifactHeader, int]:

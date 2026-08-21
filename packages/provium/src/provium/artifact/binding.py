@@ -84,6 +84,9 @@ def validate_artifact_class(artifact: object) -> type[Artifact[Any, Any]]:
 
 
 def _validate_binding(artifact: object, path: object) -> Path:
+    from provium.procedure.authorization import require_binding_creation_allowed
+
+    require_binding_creation_allowed()
     validate_artifact_class(artifact)
     if not isinstance(path, (str, PathLike)):
         raise TypeError("artifact binding path must be a string or path-like object")
@@ -103,18 +106,12 @@ class ArtifactReadBinding[ReaderT: ArtifactReader]:
 
     def open(self) -> ReaderT:
         """Open this artifact within the active resource session."""
-        from provium.procedure.authorization import expected_input_identity
         from provium.session import current_session
 
-        expected_identity = expected_input_identity(self)
         active = current_session()
         if active is None:
             raise RuntimeError("artifact opening requires an active session")
-        reader = cast(ReaderT, active.open_artifact(self))
-        if expected_identity is not None and reader.identity != expected_identity:
-            reader.close()
-            raise RuntimeError("artifact input identity changed after registration")
-        return reader
+        return cast(ReaderT, active.open_artifact(self))
 
 
 @dataclass(frozen=True, slots=True)

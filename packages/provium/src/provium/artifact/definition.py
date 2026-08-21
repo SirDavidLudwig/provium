@@ -35,6 +35,16 @@ class Artifact[ReaderT: ArtifactReader, WriterT: ArtifactWriter]:
     load: Callable[[WriterT, Path], None] | None = None
 
     @classmethod
+    def open(cls, path: str | PathLike[str]) -> ReaderT:
+        """Open this artifact for reading within the active resource session."""
+        return cls.bind_read(path).open()
+
+    @classmethod
+    def create(cls, path: str | PathLike[str]) -> WriterT:
+        """Open this artifact for writing within the active procedure callback."""
+        return cls.bind_write(path).open()
+
+    @classmethod
     def bind_read(cls, path: str | PathLike[str]) -> ArtifactReadBinding[ReaderT]:
         """Bind this artifact's reader type to a normalized path."""
         return ArtifactReadBinding(cls, Path(path))

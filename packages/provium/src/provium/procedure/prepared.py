@@ -71,6 +71,7 @@ class PreparedProcedure[
                 {},
                 {},
                 input_identities=self._setup_identities,
+                allow_binding_creation=False,
             ):
                 self._procedure.setup(
                     ProcedureSetupContext(
@@ -186,7 +187,7 @@ class PreparedProcedure[
             return self._execute_without_outputs(
                 inputs, outputs, input_bindings, context
             )
-        with authorize_bindings((), {}, {}):
+        with authorize_bindings((), {}, {}, allow_binding_creation=False):
             self._process(inputs, outputs, context)
         return self._execution_result(self._setup_session)
 
@@ -209,6 +210,7 @@ class PreparedProcedure[
                 output_bindings,
                 writers,
                 input_identities=identities,
+                allow_binding_creation=False,
             ):
                 self._process(inputs, outputs, context)
         return cast(ProcedureExecutionResult, execution.result)
@@ -228,6 +230,7 @@ class PreparedProcedure[
                 {},
                 {},
                 input_identities=identities,
+                allow_binding_creation=False,
             ):
                 self._process(inputs, outputs, context)
             return self._execution_result(active)
@@ -348,6 +351,7 @@ class PreparedProcedure[
                     {},
                     {},
                     input_identities=self._setup_identities,
+                    allow_binding_creation=False,
                 ):
                     self._procedure.close()
         except BaseException as error:

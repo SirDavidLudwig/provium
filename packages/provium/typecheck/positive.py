@@ -61,6 +61,8 @@ ImageArtifact.definition = IMAGE_ARTIFACT
 assert_type(ImageArtifact.bind_read("image.pa"), ArtifactReadBinding[ImageReader])
 assert_type(ImageArtifact.bind_read("image.pa").open(), ImageReader)
 assert_type(ImageArtifact.bind_write("image.pa"), ArtifactWriteBinding[ImageWriter])
+assert_type(ImageArtifact.open("image.pa"), ImageReader)
+assert_type(ImageArtifact.create("image.pa"), ImageWriter)
 assert_type(IMAGE_ARTIFACT.resolve(), type[ImageArtifact])
 assert_type(
     ArtifactCatalog().register(IMAGE_ARTIFACT), ArtifactDefinition[ImageArtifact]

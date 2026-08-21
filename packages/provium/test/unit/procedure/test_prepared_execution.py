@@ -11,9 +11,11 @@ from provium import (
     ArtifactDefinition,
     ArtifactHeader,
     ArtifactLineage,
+    ArtifactReadBinding,
     ArtifactReader,
     ArtifactRecord,
     ArtifactReference,
+    ArtifactWriteBinding,
     ArtifactWriter,
     PreparedProcedure,
     Procedure,
@@ -27,6 +29,7 @@ from provium import (
     ProcedureProcessContext,
     ProcedureRecord,
     ProcedureSetupContext,
+    current_session,
     decode_header,
     encode_header,
     input,
@@ -213,8 +216,92 @@ def test_callback_rejects_an_equal_but_undeclared_output_binding(
         ) -> None:
             BytesArtifact.bind_write(destination).open()
 
-    with session(), pytest.raises(RuntimeError, match="not declared"):
+    with session(), pytest.raises(RuntimeError, match="provided input/output bindings"):
         prepare(UndeclaredBindingProcedure()).execute(
+            inputs=Contract.Inputs._from_bindings({}),
+            outputs=Contract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["bind_read", "bind_write", "open", "create", "read_binding", "write_binding"],
+)
+def test_declarative_callback_rejects_manual_artifact_access(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    arbitrary = tmp_path / "arbitrary.pa"
+
+    class ManualArtifactProcedure(WritingProcedure):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: Contract.Inputs,
+            outputs: Contract.Outputs,
+        ) -> None:
+            if operation == "bind_read":
+                BytesArtifact.bind_read(arbitrary)
+            elif operation == "bind_write":
+                BytesArtifact.bind_write(arbitrary)
+            elif operation == "open":
+                BytesArtifact.open(arbitrary)
+            elif operation == "create":
+                BytesArtifact.create(arbitrary)
+            elif operation == "read_binding":
+                ArtifactReadBinding(BytesArtifact, arbitrary)
+            else:
+                ArtifactWriteBinding(BytesArtifact, arbitrary)
+
+    destination = tmp_path / "result.pa"
+    with session(), pytest.raises(RuntimeError, match="provided input/output bindings"):
+        prepare(ManualArtifactProcedure()).execute(
+            inputs=Contract.Inputs._from_bindings({}),
+            outputs=Contract.Outputs._from_bindings(
+                {"result": BytesArtifact.bind_write(destination)}
+            ),
+        )
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("operation", ["open", "create", "session_open"])
+def test_declarative_callback_rejects_prebound_undeclared_artifacts(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    source = tmp_path / "source.pa"
+    write_source(source, "source", b"source")
+    arbitrary = (
+        BytesArtifact.bind_read(source)
+        if operation in ("open", "session_open")
+        else BytesArtifact.bind_write(tmp_path / "arbitrary.pa")
+    )
+
+    class UndeclaredArtifactProcedure(WritingProcedure):
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: Contract.Inputs,
+            outputs: Contract.Outputs,
+        ) -> None:
+            if operation == "session_open":
+                active = current_session()
+                assert active is not None
+                assert isinstance(arbitrary, ArtifactReadBinding)
+                active.open_artifact(arbitrary)
+            else:
+                arbitrary.open()
+
+    destination = tmp_path / "result.pa"
+    with session(), pytest.raises(RuntimeError, match="not declared"):
+        prepare(UndeclaredArtifactProcedure()).execute(
             inputs=Contract.Inputs._from_bindings({}),
             outputs=Contract.Outputs._from_bindings(
                 {"result": BytesArtifact.bind_write(destination)}
@@ -432,7 +519,7 @@ def test_no_output_callback_still_rejects_undeclared_write_binding(
         ProcedureInputs._from_bindings({}),
     )
 
-    with pytest.raises(RuntimeError, match="not declared"):
+    with pytest.raises(RuntimeError, match="provided input/output bindings"):
         prepared.execute(
             inputs=ProcedureInputs._from_bindings({}),
             outputs=EmptyOutputs._from_bindings({}),
@@ -601,7 +688,7 @@ def test_callback_rejects_equal_but_undeclared_input_binding(
         ) -> None:
             BytesArtifact.bind_read(source_path).open()
 
-    with session(), pytest.raises(RuntimeError, match="not declared"):
+    with session(), pytest.raises(RuntimeError, match="provided input/output bindings"):
         prepare_input(UndeclaredInputProcedure()).execute(
             inputs=InputContract.Inputs._from_bindings(
                 {"source": BytesArtifact.bind_read(source_path)}
@@ -868,7 +955,7 @@ def test_setup_callback_rejects_equal_but_undeclared_input_binding(
         ) -> None:
             BytesArtifact.bind_read(model_path).open()
 
-    with pytest.raises(RuntimeError, match="not declared"):
+    with pytest.raises(RuntimeError, match="provided input/output bindings"):
         PreparedProcedure(
             UndeclaredSetupProcedure(),
             None,
@@ -897,7 +984,7 @@ def test_close_callback_rejects_undeclared_input_and_closes_setup_resources(
         ),
     )
 
-    with pytest.raises(RuntimeError, match="not declared"):
+    with pytest.raises(RuntimeError, match="provided input/output bindings"):
         prepared.close()
 
     assert procedure.model is not None

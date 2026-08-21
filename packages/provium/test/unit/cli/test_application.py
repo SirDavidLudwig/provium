@@ -91,6 +91,26 @@ def test_completion_activation_tolerates_a_dependency_omitted_install(
     assert enable_completion(argparse.ArgumentParser()) is None
 
 
+def test_completion_activation_uses_the_available_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed: list[argparse.ArgumentParser] = []
+
+    class Argcomplete:
+        @staticmethod
+        def autocomplete(parser: argparse.ArgumentParser) -> None:
+            completed.append(parser)
+
+    monkeypatch.setattr(
+        "provium.cli.completion.import_module",
+        lambda name: Argcomplete,
+    )
+    parser = argparse.ArgumentParser()
+
+    assert enable_completion(parser) is None
+    assert completed == [parser]
+
+
 def test_distribution_declares_and_marks_argcomplete_support() -> None:
     project = Path(__file__).parents[3]
     configuration = tomllib.loads((project / "pyproject.toml").read_text())
