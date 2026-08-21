@@ -1,6 +1,7 @@
+"""Tests for the built-in execute command."""
+
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ from provium import (
     repeated_input,
 )
 from provium.cli import run
-from provium.cli.commands.procedure import ExecuteCommand, ProcedureCommand
+from provium.cli.commands.execute import ExecuteCommand
 
 
 class Reader(ArtifactReader):
@@ -101,13 +102,13 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> ProcedureCatalog:
     result = ProcedureCatalog()
     result.register(DEFINITION)
     monkeypatch.setattr(
-        "provium.cli.commands.procedure.discover_procedure_catalogs",
+        "provium.cli.commands.execute.discover_procedure_catalogs",
         lambda: result,
     )
     return result
 
 
-def test_procedure_list_is_sorted_and_does_not_resolve(
+def test_execute_list_is_sorted_and_does_not_resolve(
     catalog: ProcedureCatalog,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -118,11 +119,11 @@ def test_procedure_list_is_sorted_and_does_not_resolve(
         lambda self: pytest.fail("quick listing must not resolve"),
     )
 
-    assert run(["procedure", "list"]) == 0
+    assert run(["execute", "-l"]) == 0
     assert capsys.readouterr().out == "example.ProcessV1\tProcess data\n"
 
 
-def test_procedure_show_renders_lazy_contract_metadata(
+def test_execute_help_renders_lazy_contract_metadata(
     catalog: ProcedureCatalog,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -133,7 +134,7 @@ def test_procedure_show_renders_lazy_contract_metadata(
         lambda self: pytest.fail("quick show must not resolve"),
     )
 
-    assert run(["procedure", "show", DEFINITION.identifier]) == 0
+    assert run(["execute", DEFINITION.identifier, "--help"]) == 0
     output_text = capsys.readouterr().out
     assert "Process data" in output_text
     assert "Process example data." in output_text
@@ -142,26 +143,39 @@ def test_procedure_show_renders_lazy_contract_metadata(
     assert '"value"' in output_text
 
 
-def test_procedure_show_can_explicitly_resolve(
+def test_execute_short_help_flag_renders_procedure_help(
     catalog: ProcedureCatalog,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(ProcedureDefinition, "resolve", lambda self: Implementation)
+    assert run(["execute", DEFINITION.identifier, "-h"]) == 0
+    assert DEFINITION.invocation_synopsis in capsys.readouterr().out
 
-    assert run(["procedure", "show", DEFINITION.identifier, "--resolve"]) == 0
-    assert f"Resolved: {__name__}.Implementation" in capsys.readouterr().out
+
+def test_execute_help_without_identifier_renders_command_help(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert run(["execute", "--help"]) == 0
+    assert "-l, --list" in capsys.readouterr().out
+
+
+def test_execute_list_rejects_an_identifier(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as caught:
+        run(["execute", DEFINITION.identifier, "-l"])
+    assert caught.value.code == 2
+    assert "cannot be used with --list" in capsys.readouterr().err
 
 
 def test_unknown_procedure_reports_a_cli_error(
     catalog: ProcedureCatalog,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert run(["procedure", "show", "missing"]) == 2
+    assert run(["execute", "missing", "--help"]) == 2
     assert "unknown procedure: missing" in capsys.readouterr().err
 
 
-def test_show_handles_empty_contract_without_description(
+def test_help_handles_empty_contract_without_description(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -175,11 +189,11 @@ def test_show_handles_empty_contract_without_description(
     discovered = ProcedureCatalog()
     discovered.register(definition)
     monkeypatch.setattr(
-        "provium.cli.commands.procedure.discover_procedure_catalogs",
+        "provium.cli.commands.execute.discover_procedure_catalogs",
         lambda: discovered,
     )
 
-    assert run(["procedure", "show", definition.identifier]) == 0
+    assert run(["execute", definition.identifier, "--help"]) == 0
     assert "Configuration:" not in capsys.readouterr().out
 
 
@@ -198,7 +212,7 @@ def test_execute_builds_layered_typed_bindings(
         return ProcedureExecutionResult("execution", None, ())
 
     monkeypatch.setattr(
-        "provium.cli.commands.procedure.ProcedureExecutor.execute", execute
+        "provium.cli.commands.execute.ProcedureExecutor.execute", execute
     )
 
     assert (
@@ -249,9 +263,7 @@ def test_execute_reports_runtime_failures_as_cli_errors(
     def fail(*args: object, **kwargs: object) -> None:
         raise RuntimeError("processing failed")
 
-    monkeypatch.setattr(
-        "provium.cli.commands.procedure.ProcedureExecutor.execute", fail
-    )
+    monkeypatch.setattr("provium.cli.commands.execute.ProcedureExecutor.execute", fail)
 
     assert run(["execute", DEFINITION.identifier]) == 2
     assert "processing failed" in capsys.readouterr().err
@@ -278,9 +290,10 @@ def test_binding_helpers_reject_unknown_and_duplicate_fields() -> None:
         )
 
 
-@pytest.mark.parametrize("command", [ProcedureCommand(), ExecuteCommand()])
-def test_commands_reject_direct_execution_without_configured_action(
-    command: ProcedureCommand | ExecuteCommand,
+def test_execute_requires_a_procedure_or_list_flag(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(AttributeError):
-        command.execute(argparse.Namespace())
+    with pytest.raises(SystemExit) as caught:
+        run(["execute"])
+    assert caught.value.code == 2
+    assert "identifier" in capsys.readouterr().err

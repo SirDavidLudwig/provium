@@ -2,10 +2,9 @@
 
 from ..catalog import CommandCatalog
 from .artifact import ArtifactCommand
-from .procedure import ExecuteCommand, ProcedureCommand
+from .execute import ExecuteCommand
 
 catalog = CommandCatalog()
-catalog.register(ProcedureCommand)
 catalog.register(ExecuteCommand)
 catalog.register(ArtifactCommand)
 

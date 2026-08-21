@@ -1,4 +1,4 @@
-"""Procedure inspection and direct execution commands."""
+"""Procedure discovery, help, and direct execution command."""
 
 from __future__ import annotations
 
@@ -35,86 +35,28 @@ def _print_error(error: BaseException) -> int:
     return 2
 
 
-class ProcedureCommand(Command):
-    """List and inspect discovered procedure definitions."""
-
-    name = "procedure"
-    help = "List and inspect procedures"
-
-    def configure(self, parser: argparse.ArgumentParser) -> None:
-        actions = parser.add_subparsers(dest="procedure_action", required=True)
-        list_parser = actions.add_parser("list", help="List procedures")
-        list_parser.set_defaults(procedure_handler=self._list)
-        show_parser = actions.add_parser("show", help="Show a procedure")
-        show_parser.add_argument("identifier")
-        show_parser.add_argument(
-            "--resolve",
-            action="store_true",
-            help="Import and validate the implementation",
-        )
-        show_parser.set_defaults(procedure_handler=self._show)
-
-    def execute(self, arguments: argparse.Namespace) -> int:
-        try:
-            return arguments.procedure_handler(arguments)
-        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as error:
-            return _print_error(error)
-
-    @staticmethod
-    def _list(arguments: argparse.Namespace) -> int:
-        del arguments
-        definitions = discover_procedure_catalogs().definitions
-        for identifier in sorted(definitions):
-            definition = definitions[identifier]
-            print(f"{identifier}\t{definition.label}")
-        return 0
-
-    @staticmethod
-    def _show(arguments: argparse.Namespace) -> int:
-        definition = _definition(arguments.identifier)
-        contract = definition.resolve_contract()
-        print(f"{definition.label} ({definition.identifier})")
-        if definition.description is not None:
-            print(definition.description)
-        print("\nInvocation:")
-        print(definition.invocation_synopsis)
-        ProcedureCommand._print_fields("Setup inputs", contract.metadata.setup_inputs)
-        ProcedureCommand._print_fields("Inputs", contract.metadata.inputs)
-        ProcedureCommand._print_fields("Outputs", contract.metadata.outputs)
-        schema = contract.metadata.configuration_schema
-        if schema is not None:
-            print("\nConfiguration:")
-            print(json.dumps(schema, indent=2, sort_keys=True))
-        if arguments.resolve:
-            implementation = definition.resolve()
-            target = f"{implementation.__module__}.{implementation.__qualname__}"
-            print(f"\nResolved: {target}")
-        return 0
-
-    @staticmethod
-    def _print_fields(
-        heading: str,
-        fields: tuple[ProcedureIOFieldMetadata, ...],
-    ) -> None:
-        if not fields:
-            return
-        print(f"\n{heading}:")
-        for field in fields:
-            maximum = "many" if field.maximum is None else str(field.maximum)
-            print(
-                f"  {field.name}: {field.artifact_identifier} "
-                f"[{field.minimum}..{maximum}]"
-            )
-
-
 class ExecuteCommand(Command):
     """Execute one discovered procedure directly."""
 
     name = "execute"
     help = "Execute a procedure"
+    add_help = False
 
     def configure(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("identifier")
+        self._parser = parser
+        parser.add_argument("identifier", nargs="?")
+        parser.add_argument(
+            "-h",
+            "--help",
+            action="store_true",
+            help="Show command or procedure help",
+        )
+        parser.add_argument(
+            "-l",
+            "--list",
+            action="store_true",
+            help="List available procedures",
+        )
         parser.add_argument("--config", action="append", default=[])
         parser.add_argument("--setup-input", action="append", default=[])
         parser.add_argument("--input", action="append", default=[])
@@ -122,6 +64,17 @@ class ExecuteCommand(Command):
 
     def execute(self, arguments: argparse.Namespace) -> int:
         try:
+            if arguments.list:
+                if arguments.identifier is not None:
+                    self._parser.error("identifier cannot be used with --list")
+                return self._list()
+            if arguments.identifier is None:
+                if arguments.help:
+                    self._parser.print_help()
+                    return 0
+                self._parser.error("the following arguments are required: identifier")
+            if arguments.help:
+                return self._show_help(arguments.identifier)
             definition = _definition(arguments.identifier)
             contract = definition.resolve_contract()
             layers = tuple(self._load_configuration(path) for path in arguments.config)
@@ -148,6 +101,47 @@ class ExecuteCommand(Command):
             return _print_error(error)
         print(result.identity)
         return 0
+
+    @staticmethod
+    def _list() -> int:
+        definitions = discover_procedure_catalogs().definitions
+        for identifier in sorted(definitions):
+            definition = definitions[identifier]
+            print(f"{identifier}\t{definition.label}")
+        return 0
+
+    @staticmethod
+    def _show_help(identifier: str) -> int:
+        definition = _definition(identifier)
+        contract = definition.resolve_contract()
+        print(f"{definition.label} ({definition.identifier})")
+        if definition.description is not None:
+            print(definition.description)
+        print("\nInvocation:")
+        print(definition.invocation_synopsis)
+        ExecuteCommand._print_fields("Setup inputs", contract.metadata.setup_inputs)
+        ExecuteCommand._print_fields("Inputs", contract.metadata.inputs)
+        ExecuteCommand._print_fields("Outputs", contract.metadata.outputs)
+        schema = contract.metadata.configuration_schema
+        if schema is not None:
+            print("\nConfiguration:")
+            print(json.dumps(schema, indent=2, sort_keys=True))
+        return 0
+
+    @staticmethod
+    def _print_fields(
+        heading: str,
+        fields: tuple[ProcedureIOFieldMetadata, ...],
+    ) -> None:
+        if not fields:
+            return
+        print(f"\n{heading}:")
+        for field in fields:
+            maximum = "many" if field.maximum is None else str(field.maximum)
+            print(
+                f"  {field.name}: {field.artifact_identifier} "
+                f"[{field.minimum}..{maximum}]"
+            )
 
     @staticmethod
     def _load_configuration(path_value: str) -> Mapping[str, object]:
@@ -211,4 +205,4 @@ class ExecuteCommand(Command):
         return values[0]
 
 
-__all__ = ["ExecuteCommand", "ProcedureCommand"]
+__all__ = ["ExecuteCommand"]

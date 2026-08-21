@@ -28,7 +28,11 @@ def create_parser(catalog: CommandCatalog) -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command_name", required=True)
     for command_type in catalog.commands.values():
         command = command_type()
-        command_parser = subparsers.add_parser(command.name, help=command.help)
+        command_parser = subparsers.add_parser(
+            command.name,
+            help=command.help,
+            add_help=command.add_help,
+        )
         command.configure(command_parser)
         command_parser.set_defaults(**{_COMMAND_DESTINATION: command})
     return parser

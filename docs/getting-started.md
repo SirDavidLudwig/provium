@@ -32,8 +32,8 @@ the concrete classes only when execution or explicit inspection needs them.
 After installing the plugin, verify discovery and inspect its contract:
 
 ```bash
-provium procedure list
-provium procedure show example.ProcessV1
+provium execute -l
+provium execute example.ProcessV1 --help
 ```
 
 Execute it by binding the fields declared by its contract:

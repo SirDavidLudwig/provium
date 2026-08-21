@@ -29,4 +29,5 @@ def test_concrete_command_can_configure_and_execute() -> None:
 
     assert command.name == "example"
     assert command.help == "Run an example command"
+    assert command.add_help is True
     assert command.execute(parser.parse_args(["value"])) == 5
