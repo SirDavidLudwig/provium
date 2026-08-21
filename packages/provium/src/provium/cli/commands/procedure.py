@@ -126,15 +126,15 @@ class ExecuteCommand(Command):
             contract = definition.resolve_contract()
             layers = tuple(self._load_configuration(path) for path in arguments.config)
             setup_inputs = self._read_bindings(
-                contract.SetupInputs.fields,
+                contract.SetupInputs.fields if contract.SetupInputs else {},
                 arguments.setup_input,
             )
             inputs = self._read_bindings(
-                contract.Inputs.fields,
+                contract.Inputs.fields if contract.Inputs else {},
                 arguments.input,
             )
             outputs = self._write_bindings(
-                contract.Outputs.fields,
+                contract.Outputs.fields if contract.Outputs else {},
                 arguments.output,
             )
             result = ProcedureExecutor().execute(

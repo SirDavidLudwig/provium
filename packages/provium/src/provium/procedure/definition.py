@@ -144,9 +144,9 @@ def _field_metadata_payload(
 
 def _compile_contract_metadata(
     configuration: type[ProcedureConfig] | None,
-    setup_inputs: type[ProcedureInputs],
-    inputs: type[ProcedureInputs],
-    outputs: type[ProcedureOutputs],
+    setup_inputs: type[ProcedureInputs] | None,
+    inputs: type[ProcedureInputs] | None,
+    outputs: type[ProcedureOutputs] | None,
 ) -> ProcedureContractMetadata:
     configuration_target: str | None = None
     configuration_schema_json: str | None = None
@@ -167,9 +167,11 @@ def _compile_contract_metadata(
             sort_keys=True,
         )
 
-    setup_metadata = _compile_field_metadata(setup_inputs.fields)
-    input_metadata = _compile_field_metadata(inputs.fields)
-    output_metadata = _compile_field_metadata(outputs.fields)
+    setup_metadata = (
+        _compile_field_metadata(setup_inputs.fields) if setup_inputs else ()
+    )
+    input_metadata = _compile_field_metadata(inputs.fields) if inputs else ()
+    output_metadata = _compile_field_metadata(outputs.fields) if outputs else ()
     payload = {
         "configuration_target": configuration_target,
         "configuration_schema": normalized_schema if configuration else None,
@@ -227,9 +229,9 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
     """Lightweight configuration and I/O contract for a procedure."""
 
     configuration: type[ConfigT] | None = None
-    SetupInputs: ClassVar[type[ProcedureInputs]] = ProcedureInputs
-    Inputs: ClassVar[type[ProcedureInputs]] = ProcedureInputs
-    Outputs: ClassVar[type[ProcedureOutputs]] = ProcedureOutputs
+    SetupInputs: ClassVar[type[ProcedureInputs] | None] = ProcedureInputs
+    Inputs: ClassVar[type[ProcedureInputs] | None] = ProcedureInputs
+    Outputs: ClassVar[type[ProcedureOutputs] | None] = ProcedureOutputs
     metadata: ClassVar[ProcedureContractMetadata]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -268,14 +270,23 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
     def _validate_io_declarations(cls) -> None:
         for name in ("SetupInputs", "Inputs"):
             value = getattr(cls, name)
-            if not isinstance(value, type) or not issubclass(value, ProcedureInputs):
+            if value is not None and (
+                not isinstance(value, type) or not issubclass(value, ProcedureInputs)
+            ):
                 raise TypeError(
-                    f"procedure contract {name} must be a ProcedureInputs class"
+                    f"procedure contract {name} must be a ProcedureInputs class or None"
                 )
         outputs = cls.Outputs
-        if not isinstance(outputs, type) or not issubclass(outputs, ProcedureOutputs):
+        if outputs is not None and (
+            not isinstance(outputs, type) or not issubclass(outputs, ProcedureOutputs)
+        ):
             raise TypeError(
-                "procedure contract Outputs must be a ProcedureOutputs class"
+                "procedure contract Outputs must be a ProcedureOutputs class or None"
+            )
+        if cls.SetupInputs is None and cls.Inputs is None and cls.Outputs is None:
+            raise TypeError(
+                "procedure contract must have at least one setup input, "
+                "processing input, or output declaration"
             )
 
     @classmethod
@@ -319,9 +330,9 @@ class ProcedureContract[ConfigT: ProcedureConfig | None]:
 
 class Procedure[
     ConfigT: ProcedureConfig | None,
-    SetupInputsT: ProcedureInputs,
-    InputsT: ProcedureInputs,
-    OutputsT: ProcedureOutputs,
+    SetupInputsT: ProcedureInputs | None,
+    InputsT: ProcedureInputs | None,
+    OutputsT: ProcedureOutputs | None,
 ](ABC):
     """Base type for a concrete procedure implementation."""
 
@@ -541,9 +552,9 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
         )
         expected = (
             type(None) if configuration is None else configuration,
-            contract.SetupInputs,
-            contract.Inputs,
-            contract.Outputs,
+            type(None) if contract.SetupInputs is None else contract.SetupInputs,
+            type(None) if contract.Inputs is None else contract.Inputs,
+            type(None) if contract.Outputs is None else contract.Outputs,
         )
         if specializations != {expected}:
             raise TypeError(
@@ -615,6 +626,8 @@ class ProcedureDefinition[ProcedureT: Procedure[Any, Any, Any, Any]]:
         contract = self.resolve_contract()
         records = (contract.SetupInputs, contract.Inputs, contract.Outputs)
         for record in records:
+            if record is None:
+                continue
             for io_field in record.fields.values():
                 definition = io_field.artifact
                 definitions.setdefault(id(definition), definition)

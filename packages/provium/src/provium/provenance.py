@@ -147,7 +147,7 @@ class ProcedureRecord(_SerializableRecord):
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class ProcedureExecutionRecord(_SerializableRecord):
     """One procedure execution and its artifact edges."""
 
@@ -157,12 +157,27 @@ class ProcedureExecutionRecord(_SerializableRecord):
     outputs: tuple[ArtifactReference, ...] = ()
     _shape_name: ClassVar[str] = "procedure execution record"
 
+    def __init__(
+        self,
+        identity: str,
+        procedure: ProcedureRecord,
+        inputs: tuple[ArtifactReference, ...] | None = None,
+        outputs: tuple[ArtifactReference, ...] | None = None,
+    ) -> None:
+        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "procedure", procedure)
+        object.__setattr__(self, "inputs", () if inputs is None else inputs)
+        object.__setattr__(self, "outputs", () if outputs is None else outputs)
+        self.__post_init__()
+
     def __post_init__(self) -> None:
         _require_text(self.identity, "identity")
         if not isinstance(self.procedure, ProcedureRecord):
             raise TypeError("procedure must be a procedure record")
-        if not self.outputs:
-            raise ValueError("a procedure execution requires at least one output")
+        if not self.inputs and not self.outputs:
+            raise ValueError(
+                "a procedure execution requires at least one input or output"
+            )
         self._validate_references(self.inputs, "input")
         self._validate_references(self.outputs, "output")
         self._validate_edge_directions()

@@ -48,8 +48,10 @@ class ProcedureExecutor:
         *,
         configuration_layers: Iterable[Mapping[str, object]] = (),
         setup_inputs: Mapping[str, ReadBindingValue] | ProcedureInputs | None = None,
-        inputs: Mapping[str, ReadBindingValue] | ProcedureInputs,
-        outputs: Mapping[str, ArtifactWriteBinding[Any]] | ProcedureOutputs,
+        inputs: Mapping[str, ReadBindingValue] | ProcedureInputs | None = None,
+        outputs: (
+            Mapping[str, ArtifactWriteBinding[Any]] | ProcedureOutputs | None
+        ) = None,
         cancellation: CancellationToken | None = None,
     ) -> ProcedureExecutionResult:
         """Prepare, process one invocation, and close the procedure."""
@@ -122,11 +124,12 @@ class ProcedureExecutor:
     def _prepare_setup_inputs(
         definition: ProcedureDefinition[Any],
         supplied: Mapping[str, ReadBindingValue] | ProcedureInputs | None,
-    ) -> ProcedureInputs:
-        record_type = cast(
-            type[ProcedureInputs],
-            getattr(definition.resolve_contract(), "SetupInputs"),
-        )
+    ) -> ProcedureInputs | None:
+        record_type = definition.resolve_contract().SetupInputs
+        if record_type is None:
+            if supplied is not None and supplied != {}:
+                raise TypeError("procedure does not accept setup inputs")
+            return None
         if isinstance(supplied, record_type):
             return supplied
         bindings: Mapping[str, object] = (
@@ -142,12 +145,14 @@ class ProcedureExecutor:
     @staticmethod
     def _prepare_process_inputs(
         definition: ProcedureDefinition[Any],
-        supplied: Mapping[str, ReadBindingValue] | ProcedureInputs,
-    ) -> ProcedureInputs:
-        record_type = cast(
-            type[ProcedureInputs],
-            getattr(definition.resolve_contract(), "Inputs"),
-        )
+        supplied: Mapping[str, ReadBindingValue] | ProcedureInputs | None,
+    ) -> ProcedureInputs | None:
+        record_type = definition.resolve_contract().Inputs
+        if record_type is None:
+            if supplied is not None and supplied != {}:
+                raise TypeError("procedure does not accept processing inputs")
+            return None
+        supplied = {} if supplied is None else supplied
         if isinstance(supplied, record_type):
             return supplied
         try:
@@ -164,12 +169,14 @@ class ProcedureExecutor:
     @staticmethod
     def _prepare_process_outputs(
         definition: ProcedureDefinition[Any],
-        supplied: Mapping[str, ArtifactWriteBinding[Any]] | ProcedureOutputs,
-    ) -> ProcedureOutputs:
-        record_type = cast(
-            type[ProcedureOutputs],
-            getattr(definition.resolve_contract(), "Outputs"),
-        )
+        supplied: Mapping[str, ArtifactWriteBinding[Any]] | ProcedureOutputs | None,
+    ) -> ProcedureOutputs | None:
+        record_type = definition.resolve_contract().Outputs
+        if record_type is None:
+            if supplied is not None and supplied != {}:
+                raise TypeError("procedure does not accept outputs")
+            return None
+        supplied = {} if supplied is None else supplied
         if isinstance(supplied, record_type):
             return supplied
         try:

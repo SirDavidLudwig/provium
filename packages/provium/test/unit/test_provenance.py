@@ -69,12 +69,20 @@ def test_execution_preserves_input_order_and_rejects_invalid_graph_values() -> N
 
     assert execution.inputs == (second, first)
     assert execution.outputs == (output,)
+    input_only = ProcedureExecutionRecord(
+        "execution-2",
+        procedure,
+        inputs=(first,),
+        outputs=None,
+    )
+    assert input_only.inputs == (first,)
+    assert input_only.outputs == ()
 
     with pytest.raises(ValueError, match="identity"):
         ProcedureExecutionRecord("", procedure, outputs=(output,))
     with pytest.raises(TypeError, match="procedure"):
         ProcedureExecutionRecord("execution-1", object(), outputs=(output,))  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="at least one output"):
+    with pytest.raises(ValueError, match="at least one input or output"):
         ProcedureExecutionRecord("execution-1", procedure)
     with pytest.raises(TypeError, match="input.*artifact references"):
         ProcedureExecutionRecord(
