@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.0](https://github.com/Project-Provium/provium/compare/provium-v0.6.0...provium-v0.7.0) (2026-08-21)
+
+
+### Features
+
+* Add more verbose error messages for CLI ([231eea3](https://github.com/Project-Provium/provium/commit/231eea35e38763baf7cba38f30a89937f0ab1920))
+* Add tab completion ([d1a45f4](https://github.com/Project-Provium/provium/commit/d1a45f4adfb96ab07056497ec66ef32174a89ef7))
+* enforce declarative artifact bindings ([7a30449](https://github.com/Project-Provium/provium/commit/7a304491606e4f5620434b00e0eafda7090dd73d))
+* Make procedure contract's IO optional ([2aee1c9](https://github.com/Project-Provium/provium/commit/2aee1c9eb9347579cdd964a8cf2e96c812a32dfb))
+
 ## [0.6.0](https://github.com/Project-Provium/provium/compare/provium-v0.5.0...provium-v0.6.0) (2026-08-20)
 
 
