@@ -150,6 +150,42 @@ def test_execute_help_renders_lazy_contract_metadata(
     assert '"value"' in output_text
 
 
+def test_execute_help_formats_input_and_output_fields_vertically(
+    catalog: ProcedureCatalog,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del catalog
+
+    assert run(["execute", DEFINITION.identifier, "--help"]) == 0
+
+    output_text = capsys.readouterr().out
+    assert (
+        "Inputs:\n  source\n    Artifact: example.DataV1\n    Accepts:  exactly 1\n"
+    ) in output_text
+    assert (
+        "Outputs:\n  result\n    Artifact: example.DataV1\n    Produces: exactly 1\n"
+    ) in output_text
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum", "display"),
+    [
+        (1, 1, "exactly 1"),
+        (0, 1, "0 or 1"),
+        (1, None, "1 or more"),
+        (0, None, "any number"),
+        (2, 5, "2 to 5"),
+        (3, 3, "exactly 3"),
+    ],
+)
+def test_procedure_help_formats_io_cardinality(
+    minimum: int,
+    maximum: int | None,
+    display: str,
+) -> None:
+    assert ExecuteCommand._format_cardinality(minimum, maximum) == display
+
+
 def test_execute_short_help_flag_renders_procedure_help(
     catalog: ProcedureCatalog,
     capsys: pytest.CaptureFixture[str],

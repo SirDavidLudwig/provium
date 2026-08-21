@@ -193,9 +193,11 @@ class ExecuteCommand(Command):
             print(definition.description)
         print("\nInvocation:")
         print(definition.invocation_synopsis)
-        ExecuteCommand._print_fields("Setup inputs", contract.metadata.setup_inputs)
-        ExecuteCommand._print_fields("Inputs", contract.metadata.inputs)
-        ExecuteCommand._print_fields("Outputs", contract.metadata.outputs)
+        ExecuteCommand._print_fields(
+            "Setup inputs", contract.metadata.setup_inputs, "Accepts"
+        )
+        ExecuteCommand._print_fields("Inputs", contract.metadata.inputs, "Accepts")
+        ExecuteCommand._print_fields("Outputs", contract.metadata.outputs, "Produces")
         schema = contract.metadata.configuration_schema
         if schema is not None:
             print("\nConfiguration:")
@@ -206,16 +208,30 @@ class ExecuteCommand(Command):
     def _print_fields(
         heading: str,
         fields: tuple[ProcedureIOFieldMetadata, ...],
+        quantity_verb: str,
     ) -> None:
         if not fields:
             return
         print(f"\n{heading}:")
+        quantity_label = f"{quantity_verb}:"
         for field in fields:
-            maximum = "many" if field.maximum is None else str(field.maximum)
-            print(
-                f"  {field.name}: {field.artifact_identifier} "
-                f"[{field.minimum}..{maximum}]"
+            quantity = ExecuteCommand._format_cardinality(
+                field.minimum,
+                field.maximum,
             )
+            print(f"  {field.name}")
+            print(f"    Artifact: {field.artifact_identifier}")
+            print(f"    {quantity_label:<9} {quantity}")
+
+    @staticmethod
+    def _format_cardinality(minimum: int, maximum: int | None) -> str:
+        if maximum == minimum:
+            return f"exactly {minimum}"
+        if maximum is None:
+            return "any number" if minimum == 0 else f"{minimum} or more"
+        if minimum == 0 and maximum == 1:
+            return "0 or 1"
+        return f"{minimum} to {maximum}"
 
     @staticmethod
     def _load_configuration(path_value: str) -> Mapping[str, object]:

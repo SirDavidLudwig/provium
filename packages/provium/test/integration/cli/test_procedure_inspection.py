@@ -38,10 +38,18 @@ def test_execute_list_and_help_use_real_catalog_metadata(
     assert "Transform text (test.TransformTextV1)" in captured.out
     assert "Combine several text inputs" in captured.out
     assert TRANSFORM_PROCEDURE.invocation_synopsis in captured.out
-    assert "setup: test.TextV1 [1..1]" in captured.out
-    assert "optional: test.TextV1 [0..1]" in captured.out
-    assert "repeated: test.TextV1 [1..4]" in captured.out
-    assert "transformed: test.TextV1 [1..1]" in captured.out
+    assert (
+        "Setup inputs:\n  setup\n    Artifact: test.TextV1\n    Accepts:  exactly 1\n"
+    ) in captured.out
+    assert (
+        "  optional\n    Artifact: test.TextV1\n    Accepts:  0 or 1\n"
+    ) in captured.out
+    assert (
+        "  repeated\n    Artifact: test.TextV1\n    Accepts:  1 to 4\n"
+    ) in captured.out
+    assert (
+        "Outputs:\n  transformed\n    Artifact: test.TextV1\n    Produces: exactly 1\n"
+    ) in captured.out
     assert '"prefix"' in captured.out
     assert captured.err == ""
 
