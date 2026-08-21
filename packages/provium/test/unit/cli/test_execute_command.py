@@ -182,6 +182,26 @@ def test_unknown_procedure_reports_a_cli_error(
     assert "unknown procedure: missing" in capsys.readouterr().err
 
 
+def test_procedure_contract_attribute_failure_is_reported_as_a_cli_error(
+    catalog: ProcedureCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del catalog
+
+    def fail(self: ProcedureDefinition[Any]) -> type[Any]:
+        del self
+        raise AttributeError("module has no attribute 'MissingContract'")
+
+    monkeypatch.setattr(ProcedureDefinition, "resolve_contract", fail)
+
+    assert run(["execute", DEFINITION.identifier, "--help"]) == 2
+    diagnostic = capsys.readouterr().err
+    assert f"executing procedure '{DEFINITION.identifier}' failed" in diagnostic
+    assert "AttributeError" in diagnostic
+    assert "MissingContract" in diagnostic
+
+
 def test_help_handles_empty_contract_without_description(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -273,7 +293,10 @@ def test_execute_reports_runtime_failures_as_cli_errors(
     monkeypatch.setattr("provium.cli.commands.execute.ProcedureExecutor.execute", fail)
 
     assert run(["execute", DEFINITION.identifier]) == 2
-    assert "processing failed" in capsys.readouterr().err
+    diagnostic = capsys.readouterr().err
+    assert f"executing procedure '{DEFINITION.identifier}' failed" in diagnostic
+    assert "RuntimeError" in diagnostic
+    assert "processing failed" in diagnostic
 
 
 def test_configuration_loader_supports_yaml_and_rejects_unknown_suffix(

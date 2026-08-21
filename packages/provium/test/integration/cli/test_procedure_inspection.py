@@ -101,4 +101,6 @@ def test_unknown_procedure_reports_only_a_clear_stderr_error(
     )
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "error: unknown procedure: test.MissingV1\n"
+    assert "error: executing procedure 'test.MissingV1' failed" in captured.err
+    assert "ValueError: unknown procedure: test.MissingV1" in captured.err
+    assert "provium.cli.commands.execute._definition" in captured.err

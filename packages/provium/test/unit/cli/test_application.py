@@ -170,3 +170,25 @@ def test_main_uses_process_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert main() == 9
     assert received == [["example"]]
+
+
+def test_main_reports_unhandled_cli_failure_with_origin(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail(arguments: list[str]) -> int:
+        del arguments
+        raise TypeError("entry point 'broken' did not expose a command catalog")
+
+    monkeypatch.setattr("provium.cli.application.run", fail)
+    monkeypatch.setattr("provium.cli.application.sys.argv", ["provium", "example"])
+
+    assert main() == 2
+    diagnostic = capsys.readouterr().err
+    assert "running the Provium CLI failed" in diagnostic
+    assert "TypeError" in diagnostic
+    assert (
+        "test_main_reports_unhandled_cli_failure_with_origin.<locals>.fail"
+        in diagnostic
+    )
+    assert "entry point 'broken'" in diagnostic

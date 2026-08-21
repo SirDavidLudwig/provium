@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import glob
 import json
-import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -22,6 +21,7 @@ from provium import (
 )
 
 from ..command import Command
+from ..errors import EXPECTED_CLI_ERRORS, print_cli_error
 
 
 def _complete_procedure_identifiers(prefix: str, **_: object) -> list[str]:
@@ -99,11 +99,6 @@ def _definition(identifier: str) -> ProcedureDefinition[Any]:
         raise ValueError(f"unknown procedure: {identifier}") from None
 
 
-def _print_error(error: BaseException) -> int:
-    print(f"error: {error}", file=sys.stderr)
-    return 2
-
-
 class ExecuteCommand(Command):
     """Execute one discovered procedure directly."""
 
@@ -170,8 +165,14 @@ class ExecuteCommand(Command):
                 inputs=inputs,
                 outputs=outputs,
             )
-        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as error:
-            return _print_error(error)
+        except EXPECTED_CLI_ERRORS as error:
+            identifier = getattr(arguments, "identifier", None)
+            context = (
+                "executing procedure"
+                if identifier is None
+                else f"executing procedure {identifier!r}"
+            )
+            return print_cli_error(context, error)
         print(result.identity)
         return 0
 

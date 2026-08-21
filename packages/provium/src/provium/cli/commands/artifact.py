@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ from provium import (
 )
 
 from ..command import Command
+from ..errors import EXPECTED_CLI_ERRORS, print_cli_error
 
 _LOAD_PROCEDURE_IDENTIFIER = "provium.builtin.LoadArtifactV1"
 _LOAD_PROCEDURE_CONTRACT_DIGEST = (
@@ -62,9 +62,14 @@ class ArtifactCommand(Command):
     def execute(self, arguments: argparse.Namespace) -> int:
         try:
             arguments.artifact_handler(arguments)
-        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 2
+        except EXPECTED_CLI_ERRORS as error:
+            action = arguments.artifact_action
+            identifier = getattr(arguments, "identifier", None)
+            if action == "dump":
+                context = f"dumping artifact from {str(arguments.source)!r}"
+            else:
+                context = f"loading artifact {identifier!r}"
+            return print_cli_error(context, error)
         return 0
 
     @staticmethod

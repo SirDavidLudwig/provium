@@ -11,6 +11,7 @@ from provium import __version__
 from .catalog import CommandCatalog
 from .completion import enable_completion
 from .discovery import discover_command_catalogs
+from .errors import EXPECTED_CLI_ERRORS, print_cli_error
 
 _COMMAND_DESTINATION = "_provium_command"
 
@@ -55,7 +56,10 @@ def run(
 
 def main() -> int:
     """Run the command-line interface with the process arguments."""
-    return run(sys.argv[1:])
+    try:
+        return run(sys.argv[1:])
+    except EXPECTED_CLI_ERRORS as error:
+        return print_cli_error("running the Provium CLI", error)
 
 
 __all__ = ["create_parser", "main", "run"]

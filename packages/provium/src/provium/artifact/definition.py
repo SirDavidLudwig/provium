@@ -76,12 +76,26 @@ class ArtifactDefinition[ArtifactT: Artifact[Any, Any]]:
         for component in attribute_path.split("."):
             resolved = getattr(resolved, component)
         resolved_definition = getattr(resolved, "definition", None)
+        resolved_name = (
+            f"{resolved.__module__}.{resolved.__qualname__}"
+            if isinstance(resolved, type)
+            else repr(resolved)
+        )
+        if not isinstance(resolved_definition, ArtifactDefinition):
+            raise TypeError(
+                f"resolved artifact target {resolved_name!r} for definition "
+                f"{self.identifier!r} ({self.target!r}) does not declare an "
+                "artifact definition"
+            )
         if (
-            getattr(resolved_definition, "identifier", None) != self.identifier
-            or getattr(resolved_definition, "target", None) != self.target
+            resolved_definition.identifier != self.identifier
+            or resolved_definition.target != self.target
         ):
             raise ValueError(
-                "resolved artifact definition identifier and target do not match"
+                f"resolved artifact target {resolved_name!r} definition identifier "
+                f"and target do not match {self.identifier!r} ({self.target!r}); "
+                f"received {resolved_definition.identifier!r} "
+                f"({resolved_definition.target!r})"
             )
         return cast(type[ArtifactT], resolved)
 
