@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 class _BindingAuthorization:
     inputs: Mapping[int, str | None]
     outputs: Mapping[int, ArtifactWriter]
+    allow_binding_creation: bool
 
 
 _ACTIVE_BINDINGS: ContextVar[_BindingAuthorization | None] = ContextVar(
@@ -35,6 +36,7 @@ def authorize_bindings(
     writers: Mapping[str, ArtifactWriter],
     *,
     input_identities: Mapping[int, str] | None = None,
+    allow_binding_creation: bool = True,
 ) -> Generator[None]:
     """Authorize the exact declared bindings for one callback activation."""
     authorized = _BindingAuthorization(
@@ -45,12 +47,23 @@ def authorize_bindings(
             for binding in inputs
         },
         {id(outputs[name]): writers[name] for name in outputs},
+        allow_binding_creation,
     )
     token = _ACTIVE_BINDINGS.set(authorized)
     try:
         yield
     finally:
         _ACTIVE_BINDINGS.reset(token)
+
+
+def require_binding_creation_allowed() -> None:
+    """Reject binding construction in a restricted declarative callback."""
+    active = _ACTIVE_BINDINGS.get()
+    if active is not None and not active.allow_binding_creation:
+        raise RuntimeError(
+            "artifacts cannot be bound, opened, or created manually inside a "
+            "declarative procedure callback; use the provided input/output bindings"
+        )
 
 
 def expected_input_identity(binding: ArtifactReadBinding[Any]) -> str | None:

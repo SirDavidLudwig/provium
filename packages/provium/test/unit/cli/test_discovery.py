@@ -13,7 +13,7 @@ from provium.cli import (
     reset_command_discovery,
 )
 from provium.cli.commands.artifact import ArtifactCommand
-from provium.cli.commands.procedure import ExecuteCommand, ProcedureCommand
+from provium.cli.commands.execute import ExecuteCommand
 from provium.cli.discovery import ENTRY_POINT_GROUP
 
 
@@ -74,7 +74,6 @@ def test_discovers_and_combines_installed_catalogs(
 
     assert calls == [ENTRY_POINT_GROUP]
     assert discovered.commands == {
-        "procedure": ProcedureCommand,
         "execute": ExecuteCommand,
         "artifact": ArtifactCommand,
         "first": FirstCommand,
@@ -91,7 +90,6 @@ def test_empty_plugin_discovery_returns_the_core_catalog(
     )
 
     assert tuple(discover_command_catalogs().commands) == (
-        "procedure",
         "execute",
         "artifact",
     )

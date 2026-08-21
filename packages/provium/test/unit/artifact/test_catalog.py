@@ -123,6 +123,32 @@ def test_definition_accepts_a_distinct_definition_with_the_same_identity_and_tar
     assert definition.resolve() is target
 
 
+def test_definition_identifies_a_resolved_artifact_missing_its_definition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = ArtifactDefinition(
+        "example.IntegerV1", "example.artifacts:value", "An integer artifact."
+    )
+
+    class MissingDefinitionArtifact(Artifact[Reader, Writer]):
+        reader = Reader
+        writer = Writer
+
+    monkeypatch.setattr(
+        "provium.artifact.definition.import_module",
+        lambda name: SimpleNamespace(value=MissingDefinitionArtifact),
+    )
+
+    with pytest.raises(TypeError) as caught:
+        definition.resolve()
+
+    message = str(caught.value)
+    assert "MissingDefinitionArtifact" in message
+    assert "does not declare an artifact definition" in message
+    assert "example.IntegerV1" in message
+    assert "example.artifacts:value" in message
+
+
 @pytest.mark.parametrize(
     ("identifier", "target"),
     [

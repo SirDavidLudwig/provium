@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,7 +16,10 @@ from provium import (
     ProcedureCatalog,
 )
 from provium.cli import run
-from provium.cli.commands.artifact import ArtifactCommand
+from provium.cli.commands.artifact import (
+    ArtifactCommand,
+    _complete_artifact_identifiers,
+)
 
 
 class Reader(ArtifactReader):
@@ -37,8 +41,36 @@ class TransferArtifact(Artifact[Reader, Writer]):
     writer = Writer
 
 
+class MissingDefinitionArtifact(Artifact[Reader, Writer]):
+    reader = Reader
+    writer = Writer
+    load = lambda writer, path: None  # noqa: E731
+
+
 def test_artifact_command_has_generic_help() -> None:
     assert ArtifactCommand.help == "Manage artifacts"
+
+
+def test_completion_suggests_discovered_artifact_identifiers(
+    catalog: ArtifactCatalog,
+) -> None:
+    del catalog
+
+    assert _complete_artifact_identifiers("example.T") == ["example.TransferV1"]
+    assert _complete_artifact_identifiers("missing") == []
+
+
+def test_artifact_completion_ignores_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> None:
+        raise RuntimeError("discovery failed")
+
+    monkeypatch.setattr(
+        "provium.cli.commands.artifact.discover_artifact_catalogs", fail
+    )
+
+    assert _complete_artifact_identifiers("") == []
 
 
 @pytest.fixture
@@ -130,6 +162,45 @@ def test_artifact_commands_report_missing_handlers(
 
     assert run(arguments) == 2
     assert f"does not define a {action} handler" in capsys.readouterr().err
+
+
+def test_artifact_load_identifies_the_invalid_artifact_class(
+    catalog: ArtifactCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del catalog
+    monkeypatch.setattr(
+        ArtifactDefinition,
+        "resolve",
+        lambda self: MissingDefinitionArtifact,
+    )
+
+    assert run(["artifact", "load", DEFINITION.identifier, "source", "output"]) == 2
+    diagnostic = capsys.readouterr().err
+    assert f"loading artifact '{DEFINITION.identifier}' failed" in diagnostic
+    assert "MissingDefinitionArtifact" in diagnostic
+    assert "must declare an artifact definition" in diagnostic
+
+
+def test_artifact_target_attribute_failure_is_reported_as_a_cli_error(
+    catalog: ArtifactCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del catalog
+
+    def fail(self: ArtifactDefinition[Any]) -> type[Any]:
+        del self
+        raise AttributeError("module has no attribute 'MissingArtifact'")
+
+    monkeypatch.setattr(ArtifactDefinition, "resolve", fail)
+
+    assert run(["artifact", "load", DEFINITION.identifier, "source", "output"]) == 2
+    diagnostic = capsys.readouterr().err
+    assert f"loading artifact '{DEFINITION.identifier}' failed" in diagnostic
+    assert "AttributeError" in diagnostic
+    assert "MissingArtifact" in diagnostic
 
 
 def test_artifact_commands_report_an_unknown_artifact(

@@ -96,7 +96,7 @@ def test_installed_wheels_complete_external_plugin_workflow(
     ).stdout.strip()
     version = run(str(python), "-m", "provium", "--version", cwd=tmp_path)
     assert version.stdout == f"provium {installed_version}\n"
-    listed = run(str(python), "-m", "provium", "procedure", "list", cwd=tmp_path)
+    listed = run(str(python), "-m", "provium", "execute", "-l", cwd=tmp_path)
     assert "smoke.SourceTextV1\tSource text" in listed.stdout
     assert "smoke.TransformTextV1\tTransform text" in listed.stdout
     assert "smoke.FailingTextV1\tFailing text" in listed.stdout
@@ -127,32 +127,14 @@ def test_installed_wheels_complete_external_plugin_workflow(
         str(python),
         "-m",
         "provium",
-        "procedure",
-        "show",
+        "execute",
         "smoke.TransformTextV1",
+        "--help",
         cwd=tmp_path,
         environment=sentinel_environment,
     )
     assert "provium execute smoke.TransformTextV1" in shown.stdout
     assert not sentinel.exists()
-    resolved = run(
-        str(python),
-        "-m",
-        "provium",
-        "procedure",
-        "show",
-        "smoke.TransformTextV1",
-        "--resolve",
-        cwd=tmp_path,
-        environment=sentinel_environment,
-    )
-    assert "Resolved: provium_example_plugin.procedures.TransformProcedure" in (
-        resolved.stdout
-    )
-    assert sentinel.read_text(encoding="utf-8").splitlines() == [
-        "procedures",
-        "artifacts",
-    ]
 
     def create_source(name: str, text: str) -> Path:
         configuration = tmp_path / f"{name}.json"
@@ -262,8 +244,8 @@ assert {{reference.identity for reference in execution.outputs}} == {{
 
     console = run(
         str(environment / "bin" / "provium"),
-        "procedure",
-        "list",
+        "execute",
+        "-l",
         cwd=tmp_path,
     )
     assert console.stdout == listed.stdout

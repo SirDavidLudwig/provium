@@ -12,6 +12,7 @@ class Command(ABC):
 
     name: ClassVar[str]
     help: ClassVar[str]
+    add_help: ClassVar[bool] = True
 
     @abstractmethod
     def configure(self, parser: ArgumentParser) -> None:

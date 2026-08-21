@@ -105,6 +105,12 @@ closed. Each processing directory is fresh and removed after that invocation.
 Cancellation is cooperative: Provium checks immediately before user processing,
 and long-running procedures should check at useful interruption points.
 
+Declarative `setup()`, `process()`, and `close()` callbacks may access artifacts
+only through the bound input and output values supplied to them. Creating new
+bindings or calling an artifact class's `open()` or `create()` method inside a
+declarative callback raises `RuntimeError`. Use `ImperativeProcedure` when the
+set of artifact paths must be assembled dynamically.
+
 ## Imperative compatibility
 
 For dynamic workflows that cannot use a declared callback, use the separate

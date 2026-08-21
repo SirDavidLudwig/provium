@@ -1,7 +1,9 @@
+"""Tests for the built-in execute command."""
+
 from __future__ import annotations
 
-import argparse
 import json
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +29,13 @@ from provium import (
     repeated_input,
 )
 from provium.cli import run
-from provium.cli.commands.procedure import ExecuteCommand, ProcedureCommand
+from provium.cli.commands.execute import (
+    ExecuteCommand,
+    _complete_input_bindings,
+    _complete_output_bindings,
+    _complete_procedure_identifiers,
+    _complete_setup_bindings,
+)
 
 
 class Reader(ArtifactReader):
@@ -101,13 +109,13 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> ProcedureCatalog:
     result = ProcedureCatalog()
     result.register(DEFINITION)
     monkeypatch.setattr(
-        "provium.cli.commands.procedure.discover_procedure_catalogs",
+        "provium.cli.commands.execute.discover_procedure_catalogs",
         lambda: result,
     )
     return result
 
 
-def test_procedure_list_is_sorted_and_does_not_resolve(
+def test_execute_list_is_sorted_and_does_not_resolve(
     catalog: ProcedureCatalog,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -118,11 +126,11 @@ def test_procedure_list_is_sorted_and_does_not_resolve(
         lambda self: pytest.fail("quick listing must not resolve"),
     )
 
-    assert run(["procedure", "list"]) == 0
+    assert run(["execute", "-l"]) == 0
     assert capsys.readouterr().out == "example.ProcessV1\tProcess data\n"
 
 
-def test_procedure_show_renders_lazy_contract_metadata(
+def test_execute_help_renders_lazy_contract_metadata(
     catalog: ProcedureCatalog,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -133,7 +141,7 @@ def test_procedure_show_renders_lazy_contract_metadata(
         lambda self: pytest.fail("quick show must not resolve"),
     )
 
-    assert run(["procedure", "show", DEFINITION.identifier]) == 0
+    assert run(["execute", DEFINITION.identifier, "--help"]) == 0
     output_text = capsys.readouterr().out
     assert "Process data" in output_text
     assert "Process example data." in output_text
@@ -142,26 +150,95 @@ def test_procedure_show_renders_lazy_contract_metadata(
     assert '"value"' in output_text
 
 
-def test_procedure_show_can_explicitly_resolve(
+def test_execute_help_formats_input_and_output_fields_vertically(
     catalog: ProcedureCatalog,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(ProcedureDefinition, "resolve", lambda self: Implementation)
+    del catalog
 
-    assert run(["procedure", "show", DEFINITION.identifier, "--resolve"]) == 0
-    assert f"Resolved: {__name__}.Implementation" in capsys.readouterr().out
+    assert run(["execute", DEFINITION.identifier, "--help"]) == 0
+
+    output_text = capsys.readouterr().out
+    assert (
+        "Inputs:\n  source\n    Artifact: example.DataV1\n    Accepts:  exactly 1\n"
+    ) in output_text
+    assert (
+        "Outputs:\n  result\n    Artifact: example.DataV1\n    Produces: exactly 1\n"
+    ) in output_text
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum", "display"),
+    [
+        (1, 1, "exactly 1"),
+        (0, 1, "0 or 1"),
+        (1, None, "1 or more"),
+        (0, None, "any number"),
+        (2, 5, "2 to 5"),
+        (3, 3, "exactly 3"),
+    ],
+)
+def test_procedure_help_formats_io_cardinality(
+    minimum: int,
+    maximum: int | None,
+    display: str,
+) -> None:
+    assert ExecuteCommand._format_cardinality(minimum, maximum) == display
+
+
+def test_execute_short_help_flag_renders_procedure_help(
+    catalog: ProcedureCatalog,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert run(["execute", DEFINITION.identifier, "-h"]) == 0
+    assert DEFINITION.invocation_synopsis in capsys.readouterr().out
+
+
+def test_execute_help_without_identifier_renders_command_help(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert run(["execute", "--help"]) == 0
+    assert "-l, --list" in capsys.readouterr().out
+
+
+def test_execute_list_rejects_an_identifier(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as caught:
+        run(["execute", DEFINITION.identifier, "-l"])
+    assert caught.value.code == 2
+    assert "cannot be used with --list" in capsys.readouterr().err
 
 
 def test_unknown_procedure_reports_a_cli_error(
     catalog: ProcedureCatalog,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert run(["procedure", "show", "missing"]) == 2
+    assert run(["execute", "missing", "--help"]) == 2
     assert "unknown procedure: missing" in capsys.readouterr().err
 
 
-def test_show_handles_empty_contract_without_description(
+def test_procedure_contract_attribute_failure_is_reported_as_a_cli_error(
+    catalog: ProcedureCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del catalog
+
+    def fail(self: ProcedureDefinition[Any]) -> type[Any]:
+        del self
+        raise AttributeError("module has no attribute 'MissingContract'")
+
+    monkeypatch.setattr(ProcedureDefinition, "resolve_contract", fail)
+
+    assert run(["execute", DEFINITION.identifier, "--help"]) == 2
+    diagnostic = capsys.readouterr().err
+    assert f"executing procedure '{DEFINITION.identifier}' failed" in diagnostic
+    assert "AttributeError" in diagnostic
+    assert "MissingContract" in diagnostic
+
+
+def test_help_handles_empty_contract_without_description(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -175,11 +252,11 @@ def test_show_handles_empty_contract_without_description(
     discovered = ProcedureCatalog()
     discovered.register(definition)
     monkeypatch.setattr(
-        "provium.cli.commands.procedure.discover_procedure_catalogs",
+        "provium.cli.commands.execute.discover_procedure_catalogs",
         lambda: discovered,
     )
 
-    assert run(["procedure", "show", definition.identifier]) == 0
+    assert run(["execute", definition.identifier, "--help"]) == 0
     assert "Configuration:" not in capsys.readouterr().out
 
 
@@ -198,7 +275,7 @@ def test_execute_builds_layered_typed_bindings(
         return ProcedureExecutionResult("execution", None, ())
 
     monkeypatch.setattr(
-        "provium.cli.commands.procedure.ProcedureExecutor.execute", execute
+        "provium.cli.commands.execute.ProcedureExecutor.execute", execute
     )
 
     assert (
@@ -249,12 +326,13 @@ def test_execute_reports_runtime_failures_as_cli_errors(
     def fail(*args: object, **kwargs: object) -> None:
         raise RuntimeError("processing failed")
 
-    monkeypatch.setattr(
-        "provium.cli.commands.procedure.ProcedureExecutor.execute", fail
-    )
+    monkeypatch.setattr("provium.cli.commands.execute.ProcedureExecutor.execute", fail)
 
     assert run(["execute", DEFINITION.identifier]) == 2
-    assert "processing failed" in capsys.readouterr().err
+    diagnostic = capsys.readouterr().err
+    assert f"executing procedure '{DEFINITION.identifier}' failed" in diagnostic
+    assert "RuntimeError" in diagnostic
+    assert "processing failed" in diagnostic
 
 
 def test_configuration_loader_supports_yaml_and_rejects_unknown_suffix(
@@ -278,9 +356,85 @@ def test_binding_helpers_reject_unknown_and_duplicate_fields() -> None:
         )
 
 
-@pytest.mark.parametrize("command", [ProcedureCommand(), ExecuteCommand()])
-def test_commands_reject_direct_execution_without_configured_action(
-    command: ProcedureCommand | ExecuteCommand,
+def test_execute_requires_a_procedure_or_list_flag(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(AttributeError):
-        command.execute(argparse.Namespace())
+    with pytest.raises(SystemExit) as caught:
+        run(["execute"])
+    assert caught.value.code == 2
+    assert "identifier" in capsys.readouterr().err
+
+
+def test_completion_suggests_discovered_procedure_identifiers(
+    catalog: ProcedureCatalog,
+) -> None:
+    del catalog
+
+    assert _complete_procedure_identifiers("example.P") == ["example.ProcessV1"]
+    assert _complete_procedure_identifiers("missing") == []
+
+
+def test_completion_suggests_contract_binding_fields(
+    catalog: ProcedureCatalog,
+) -> None:
+    del catalog
+    arguments = Namespace(identifier=DEFINITION.identifier)
+
+    assert _complete_setup_bindings("m", parsed_args=arguments) == ["model="]
+    assert _complete_input_bindings("", parsed_args=arguments) == [
+        "source=",
+        "previous=",
+        "extras=",
+    ]
+    assert _complete_output_bindings("r", parsed_args=arguments) == ["result="]
+
+
+def test_binding_completion_continues_with_filesystem_paths(
+    catalog: ProcedureCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    del catalog
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "source-one.pa").touch()
+    (tmp_path / "source-two.pa").touch()
+    (tmp_path / "source-directory").mkdir()
+    (tmp_path / "unrelated.pa").touch()
+    arguments = Namespace(identifier=DEFINITION.identifier)
+
+    assert _complete_input_bindings("source=source-", parsed_args=arguments) == [
+        "source=source-directory/",
+        "source=source-one.pa",
+        "source=source-two.pa",
+    ]
+
+
+def test_binding_completion_is_empty_without_a_known_procedure(
+    catalog: ProcedureCatalog,
+) -> None:
+    del catalog
+
+    assert _complete_input_bindings("", parsed_args=Namespace(identifier=None)) == []
+    assert (
+        _complete_input_bindings("", parsed_args=Namespace(identifier="missing")) == []
+    )
+    assert (
+        _complete_input_bindings(
+            "missing=value",
+            parsed_args=Namespace(identifier=DEFINITION.identifier),
+        )
+        == []
+    )
+
+
+def test_completion_ignores_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> None:
+        raise RuntimeError("discovery failed")
+
+    monkeypatch.setattr(
+        "provium.cli.commands.execute.discover_procedure_catalogs", fail
+    )
+
+    assert _complete_procedure_identifiers("") == []

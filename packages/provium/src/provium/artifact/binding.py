@@ -19,19 +19,27 @@ def validate_artifact_class(artifact: object) -> type[Artifact[Any, Any]]:
     from .definition import Artifact, ArtifactDefinition
 
     if not isinstance(artifact, type) or not issubclass(artifact, Artifact):
-        raise TypeError("artifact binding artifact must be an Artifact class")
+        raise TypeError(
+            "artifact binding artifact must be an Artifact class; "
+            f"received {artifact!r}"
+        )
     artifact_class = cast(type[object], artifact)
+    artifact_name = f"{artifact_class.__module__}.{artifact_class.__qualname__}"
     if not isinstance(getattr(artifact_class, "definition", None), ArtifactDefinition):
-        raise TypeError("artifact binding artifact must declare an artifact definition")
+        raise TypeError(
+            f"artifact class {artifact_name!r} must declare an artifact definition"
+        )
     reader = getattr(artifact_class, "reader", None)
     if not isinstance(reader, type) or not issubclass(reader, ArtifactReader):
         raise TypeError(
-            "artifact binding artifact must declare an artifact reader class"
+            f"artifact class {artifact_name!r} must declare an artifact reader class; "
+            f"received {reader!r}"
         )
     writer = getattr(artifact_class, "writer", None)
     if not isinstance(writer, type) or not issubclass(writer, ArtifactWriter):
         raise TypeError(
-            "artifact binding artifact must declare an artifact writer class"
+            f"artifact class {artifact_name!r} must declare an artifact writer class; "
+            f"received {writer!r}"
         )
     specializations: set[tuple[type[object], type[object]]] = set()
     for base in artifact_class.__mro__:
@@ -46,27 +54,39 @@ def validate_artifact_class(artifact: object) -> type[Artifact[Any, Any]]:
                     )
     if len(specializations) != 1:
         raise TypeError(
-            "artifact binding artifact must have exactly one generic specialization"
+            f"artifact class {artifact_name!r} must have exactly one generic "
+            f"specialization; found {len(specializations)}"
         )
     expected_reader, expected_writer = next(iter(specializations))
     if reader is not expected_reader:
         raise TypeError(
-            "artifact binding artifact reader does not match its generic specialization"
+            f"artifact class {artifact_name!r} reader does not match its generic "
+            f"specialization; declared {reader!r}, expected {expected_reader!r}"
         )
     if writer is not expected_writer:
         raise TypeError(
-            "artifact binding artifact writer does not match its generic specialization"
+            f"artifact class {artifact_name!r} writer does not match its generic "
+            f"specialization; declared {writer!r}, expected {expected_writer!r}"
         )
     dump = getattr(artifact_class, "dump", None)
     if dump is not None and not callable(dump):
-        raise TypeError("artifact binding artifact dump must be callable or None")
+        raise TypeError(
+            f"artifact class {artifact_name!r} dump must be callable or None; "
+            f"received {dump!r}"
+        )
     load = getattr(artifact_class, "load", None)
     if load is not None and not callable(load):
-        raise TypeError("artifact binding artifact load must be callable or None")
+        raise TypeError(
+            f"artifact class {artifact_name!r} load must be callable or None; "
+            f"received {load!r}"
+        )
     return cast(type[Artifact[Any, Any]], artifact)
 
 
 def _validate_binding(artifact: object, path: object) -> Path:
+    from provium.procedure.authorization import require_binding_creation_allowed
+
+    require_binding_creation_allowed()
     validate_artifact_class(artifact)
     if not isinstance(path, (str, PathLike)):
         raise TypeError("artifact binding path must be a string or path-like object")
@@ -86,18 +106,12 @@ class ArtifactReadBinding[ReaderT: ArtifactReader]:
 
     def open(self) -> ReaderT:
         """Open this artifact within the active resource session."""
-        from provium.procedure.authorization import expected_input_identity
         from provium.session import current_session
 
-        expected_identity = expected_input_identity(self)
         active = current_session()
         if active is None:
             raise RuntimeError("artifact opening requires an active session")
-        reader = cast(ReaderT, active.open_artifact(self))
-        if expected_identity is not None and reader.identity != expected_identity:
-            reader.close()
-            raise RuntimeError("artifact input identity changed after registration")
-        return reader
+        return cast(ReaderT, active.open_artifact(self))
 
 
 @dataclass(frozen=True, slots=True)

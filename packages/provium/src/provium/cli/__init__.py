@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """Provium's command-line interface and command plugin system."""
 
 from importlib.metadata import version

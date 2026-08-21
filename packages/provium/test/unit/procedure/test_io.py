@@ -425,6 +425,8 @@ def test_inherited_field_cannot_change_cardinality(
         ("input", -1, 1, ValueError, "minimum"),
         ("input", 0, True, TypeError, "maximum"),
         ("input", 2, 1, ValueError, "maximum"),
+        ("input", 0, 0, ValueError, "at least one artifact"),
+        ("output", 0, 0, ValueError, "at least one artifact"),
     ],
 )
 def test_io_field_validates_cardinality_metadata(

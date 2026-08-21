@@ -57,6 +57,42 @@ def test_artifact_binds_a_normalized_write_path() -> None:
     assert binding.path == Path("nested/output.pa")
 
 
+def test_artifact_open_binds_and_opens_a_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = Reader.__new__(Reader)
+    opened: list[ArtifactReadBinding[Reader]] = []
+
+    def open_binding(binding: ArtifactReadBinding[Reader]) -> Reader:
+        opened.append(binding)
+        return expected
+
+    monkeypatch.setattr(ArtifactReadBinding, "open", open_binding)
+
+    reader = ExampleArtifact.open("nested/input.pa")
+
+    assert reader is expected
+    assert opened == [ArtifactReadBinding(ExampleArtifact, Path("nested/input.pa"))]
+
+
+def test_artifact_create_binds_and_opens_a_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = Writer.__new__(Writer)
+    opened: list[ArtifactWriteBinding[Writer]] = []
+
+    def open_binding(binding: ArtifactWriteBinding[Writer]) -> Writer:
+        opened.append(binding)
+        return expected
+
+    monkeypatch.setattr(ArtifactWriteBinding, "open", open_binding)
+
+    writer = ExampleArtifact.create("nested/output.pa")
+
+    assert writer is expected
+    assert opened == [ArtifactWriteBinding(ExampleArtifact, Path("nested/output.pa"))]
+
+
 def test_bindings_are_immutable() -> None:
     read = ExampleArtifact.bind_read("input.pa")
     write = ExampleArtifact.bind_write("output.pa")
@@ -67,7 +103,7 @@ def test_bindings_are_immutable() -> None:
         write.path = Path("changed.pa")
 
 
-@pytest.mark.parametrize("method_name", ["bind_read", "bind_write"])
+@pytest.mark.parametrize("method_name", ["bind_read", "bind_write", "open", "create"])
 def test_artifact_binding_rejects_non_path_values(method_name: str) -> None:
     method = getattr(ExampleArtifact, method_name)
 

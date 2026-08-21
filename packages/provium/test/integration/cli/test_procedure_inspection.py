@@ -14,12 +14,12 @@ from provium.cli import run
 from provium.cli.commands import catalog as command_catalog
 
 
-def test_procedure_list_and_show_use_real_catalog_metadata(
+def test_execute_list_and_help_use_real_catalog_metadata(
     discovered_pipeline: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     del discovered_pipeline
-    assert run(["procedure", "list"], catalog=command_catalog) == 0
+    assert run(["execute", "-l"], catalog=command_catalog) == 0
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
     assert lines == sorted(lines)
@@ -29,7 +29,7 @@ def test_procedure_list_and_show_use_real_catalog_metadata(
 
     assert (
         run(
-            ["procedure", "show", TRANSFORM_PROCEDURE.identifier],
+            ["execute", TRANSFORM_PROCEDURE.identifier, "--help"],
             catalog=command_catalog,
         )
         == 0
@@ -38,15 +38,23 @@ def test_procedure_list_and_show_use_real_catalog_metadata(
     assert "Transform text (test.TransformTextV1)" in captured.out
     assert "Combine several text inputs" in captured.out
     assert TRANSFORM_PROCEDURE.invocation_synopsis in captured.out
-    assert "setup: test.TextV1 [1..1]" in captured.out
-    assert "optional: test.TextV1 [0..1]" in captured.out
-    assert "repeated: test.TextV1 [1..4]" in captured.out
-    assert "transformed: test.TextV1 [1..1]" in captured.out
+    assert (
+        "Setup inputs:\n  setup\n    Artifact: test.TextV1\n    Accepts:  exactly 1\n"
+    ) in captured.out
+    assert (
+        "  optional\n    Artifact: test.TextV1\n    Accepts:  0 or 1\n"
+    ) in captured.out
+    assert (
+        "  repeated\n    Artifact: test.TextV1\n    Accepts:  1 to 4\n"
+    ) in captured.out
+    assert (
+        "Outputs:\n  transformed\n    Artifact: test.TextV1\n    Produces: exactly 1\n"
+    ) in captured.out
     assert '"prefix"' in captured.out
     assert captured.err == ""
 
 
-def test_quick_show_is_lazy_and_resolve_imports_implementations(
+def test_procedure_help_is_lazy(
     pipeline_distribution: Path,
     tmp_path: Path,
 ) -> None:
@@ -60,37 +68,31 @@ def test_quick_show_is_lazy_and_resolve_imports_implementations(
             str(cli_root / "src"),
         )
     )
-    scenarios = (
-        ([], tmp_path / "quick.log", False),
-        (["--resolve"], tmp_path / "resolved.log", True),
-    )
-    for extra_arguments, sentinel, expect_import in scenarios:
-        environment = os.environ.copy()
-        environment["PYTHONPATH"] = pythonpath
-        environment["PROVIUM_TEST_IMPORT_SENTINEL"] = str(sentinel)
-        script = f"""
+    sentinel = tmp_path / "quick.log"
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = pythonpath
+    environment["PROVIUM_TEST_IMPORT_SENTINEL"] = str(sentinel)
+    script = f"""
 from pathlib import Path
 from provium.cli import run
 from provium.cli.commands import catalog
 
 status = run(
-    ["procedure", "show", "test.TransformTextV1", *{extra_arguments!r}],
+    ["execute", "test.TransformTextV1", "--help"],
     catalog=catalog,
 )
 assert status == 0
 sentinel = Path({str(sentinel)!r})
-assert sentinel.exists() is {expect_import!r}
-if sentinel.exists():
-    assert sentinel.read_text().splitlines() == ["procedures", "artifacts"]
+assert not sentinel.exists()
 """
-        subprocess.run(
-            [sys.executable, "-c", script],
-            check=True,
-            cwd=cli_root,
-            env=environment,
-            capture_output=True,
-            text=True,
-        )
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        cwd=cli_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_unknown_procedure_reports_only_a_clear_stderr_error(
@@ -100,11 +102,13 @@ def test_unknown_procedure_reports_only_a_clear_stderr_error(
     del discovered_pipeline
     assert (
         run(
-            ["procedure", "show", "test.MissingV1"],
+            ["execute", "test.MissingV1", "--help"],
             catalog=command_catalog,
         )
         == 2
     )
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "error: unknown procedure: test.MissingV1\n"
+    assert "error: executing procedure 'test.MissingV1' failed" in captured.err
+    assert "ValueError: unknown procedure: test.MissingV1" in captured.err
+    assert "provium.cli.commands.execute._definition" in captured.err

@@ -54,6 +54,10 @@ class ProcedureIOField:
             raise ValueError("procedure I/O field minimum must be nonnegative")
         if maximum is not None and type(maximum) is not int:
             raise TypeError("procedure I/O field maximum must be an integer or None")
+        if maximum == 0:
+            raise ValueError(
+                "procedure I/O field maximum must allow at least one artifact"
+            )
         if maximum is not None and maximum < minimum:
             raise ValueError(
                 "procedure I/O field maximum must be greater than or equal to minimum"

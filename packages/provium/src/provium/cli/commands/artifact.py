@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +14,22 @@ from provium import (
 )
 
 from ..command import Command
+from ..errors import EXPECTED_CLI_ERRORS, print_cli_error
 
 _LOAD_PROCEDURE_IDENTIFIER = "provium.builtin.LoadArtifactV1"
 _LOAD_PROCEDURE_CONTRACT_DIGEST = (
     "17acdbf8b06ab63f7fce758374716414892a81d79fb313f8323013029ff4af24"
 )
+
+
+def _complete_artifact_identifiers(prefix: str, **_: object) -> list[str]:
+    try:
+        identifiers = discover_artifact_catalogs().definitions
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted(
+        identifier for identifier in identifiers if identifier.startswith(prefix)
+    )
 
 
 def _artifact(identifier: str) -> type[Any]:
@@ -43,7 +53,8 @@ class ArtifactCommand(Command):
                 action, help=f"{action.title()} an artifact"
             )
             if action == "load":
-                action_parser.add_argument("identifier")
+                identifier = action_parser.add_argument("identifier")
+                identifier.completer = _complete_artifact_identifiers  # type: ignore[attr-defined]
             action_parser.add_argument("source", type=Path)
             action_parser.add_argument("destination", type=Path)
             action_parser.set_defaults(artifact_handler=getattr(self, f"_{action}"))
@@ -51,9 +62,14 @@ class ArtifactCommand(Command):
     def execute(self, arguments: argparse.Namespace) -> int:
         try:
             arguments.artifact_handler(arguments)
-        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 2
+        except EXPECTED_CLI_ERRORS as error:
+            action = arguments.artifact_action
+            identifier = getattr(arguments, "identifier", None)
+            if action == "dump":
+                context = f"dumping artifact from {str(arguments.source)!r}"
+            else:
+                context = f"loading artifact {identifier!r}"
+            return print_cli_error(context, error)
         return 0
 
     @staticmethod
