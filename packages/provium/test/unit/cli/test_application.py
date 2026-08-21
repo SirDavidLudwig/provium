@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +14,7 @@ from provium.cli import (
     main,
     run,
 )
+from provium.cli.completion import enable_completion
 
 
 class ExampleCommand(Command):
@@ -60,6 +63,41 @@ def test_parser_registers_catalog_commands(catalog: CommandCatalog) -> None:
 def test_run_executes_the_selected_command(catalog: CommandCatalog) -> None:
     assert run(["example", "value"], catalog=catalog) == 5
     assert ExampleCommand.executions == ["value"]
+
+
+def test_run_enables_completion_before_parsing(
+    catalog: CommandCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed: list[argparse.ArgumentParser] = []
+    monkeypatch.setattr(
+        "provium.cli.application.enable_completion",
+        lambda parser: completed.append(parser),
+    )
+
+    assert run(["example", "value"], catalog=catalog) == 5
+    assert len(completed) == 1
+    assert completed[0].prog == "provium"
+
+
+def test_completion_activation_tolerates_a_dependency_omitted_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing(name: str) -> object:
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("provium.cli.completion.import_module", missing)
+
+    assert enable_completion(argparse.ArgumentParser()) is None
+
+
+def test_distribution_declares_and_marks_argcomplete_support() -> None:
+    project = Path(__file__).parents[3]
+    configuration = tomllib.loads((project / "pyproject.toml").read_text())
+    cli_module = project / "src" / "provium" / "cli" / "__init__.py"
+
+    assert "argcomplete>=3,<4" in configuration["project"]["dependencies"]
+    assert cli_module.read_text().splitlines()[0] == "# PYTHON_ARGCOMPLETE_OK"
 
 
 def test_command_argument_named_command_does_not_overwrite_dispatch() -> None:

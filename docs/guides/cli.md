@@ -47,3 +47,21 @@ provenance execution identity and returns 0.
 
 Run `provium --help` or `provium execute --help` for the installed command
 surface.
+
+## Enable tab completion
+
+Provium completes commands, options, discovered procedure and artifact
+identifiers, procedure binding fields, and filesystem paths inside bindings.
+
+Enable completion for Bash or Zsh in the current shell:
+
+```bash
+eval "$(register-python-argcomplete provium)"
+```
+
+Add that line to `~/.bashrc` or `~/.zshrc` to enable it in future shells. You can
+instead activate argcomplete globally for Python applications:
+
+```bash
+activate-global-python-argcomplete --user
+```

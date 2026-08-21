@@ -22,6 +22,16 @@ _LOAD_PROCEDURE_CONTRACT_DIGEST = (
 )
 
 
+def _complete_artifact_identifiers(prefix: str, **_: object) -> list[str]:
+    try:
+        identifiers = discover_artifact_catalogs().definitions
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted(
+        identifier for identifier in identifiers if identifier.startswith(prefix)
+    )
+
+
 def _artifact(identifier: str) -> type[Any]:
     try:
         definition = discover_artifact_catalogs().resolve(identifier)
@@ -43,7 +53,8 @@ class ArtifactCommand(Command):
                 action, help=f"{action.title()} an artifact"
             )
             if action == "load":
-                action_parser.add_argument("identifier")
+                identifier = action_parser.add_argument("identifier")
+                identifier.completer = _complete_artifact_identifiers  # type: ignore[attr-defined]
             action_parser.add_argument("source", type=Path)
             action_parser.add_argument("destination", type=Path)
             action_parser.set_defaults(artifact_handler=getattr(self, f"_{action}"))

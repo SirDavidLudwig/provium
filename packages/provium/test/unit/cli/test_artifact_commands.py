@@ -15,7 +15,10 @@ from provium import (
     ProcedureCatalog,
 )
 from provium.cli import run
-from provium.cli.commands.artifact import ArtifactCommand
+from provium.cli.commands.artifact import (
+    ArtifactCommand,
+    _complete_artifact_identifiers,
+)
 
 
 class Reader(ArtifactReader):
@@ -39,6 +42,28 @@ class TransferArtifact(Artifact[Reader, Writer]):
 
 def test_artifact_command_has_generic_help() -> None:
     assert ArtifactCommand.help == "Manage artifacts"
+
+
+def test_completion_suggests_discovered_artifact_identifiers(
+    catalog: ArtifactCatalog,
+) -> None:
+    del catalog
+
+    assert _complete_artifact_identifiers("example.T") == ["example.TransferV1"]
+    assert _complete_artifact_identifiers("missing") == []
+
+
+def test_artifact_completion_ignores_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> None:
+        raise RuntimeError("discovery failed")
+
+    monkeypatch.setattr(
+        "provium.cli.commands.artifact.discover_artifact_catalogs", fail
+    )
+
+    assert _complete_artifact_identifiers("") == []
 
 
 @pytest.fixture

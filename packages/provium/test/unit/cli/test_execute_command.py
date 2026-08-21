@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,13 @@ from provium import (
     repeated_input,
 )
 from provium.cli import run
-from provium.cli.commands.execute import ExecuteCommand
+from provium.cli.commands.execute import (
+    ExecuteCommand,
+    _complete_input_bindings,
+    _complete_output_bindings,
+    _complete_procedure_identifiers,
+    _complete_setup_bindings,
+)
 
 
 class Reader(ArtifactReader):
@@ -297,3 +304,78 @@ def test_execute_requires_a_procedure_or_list_flag(
         run(["execute"])
     assert caught.value.code == 2
     assert "identifier" in capsys.readouterr().err
+
+
+def test_completion_suggests_discovered_procedure_identifiers(
+    catalog: ProcedureCatalog,
+) -> None:
+    del catalog
+
+    assert _complete_procedure_identifiers("example.P") == ["example.ProcessV1"]
+    assert _complete_procedure_identifiers("missing") == []
+
+
+def test_completion_suggests_contract_binding_fields(
+    catalog: ProcedureCatalog,
+) -> None:
+    del catalog
+    arguments = Namespace(identifier=DEFINITION.identifier)
+
+    assert _complete_setup_bindings("m", parsed_args=arguments) == ["model="]
+    assert _complete_input_bindings("", parsed_args=arguments) == [
+        "source=",
+        "previous=",
+        "extras=",
+    ]
+    assert _complete_output_bindings("r", parsed_args=arguments) == ["result="]
+
+
+def test_binding_completion_continues_with_filesystem_paths(
+    catalog: ProcedureCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    del catalog
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "source-one.pa").touch()
+    (tmp_path / "source-two.pa").touch()
+    (tmp_path / "source-directory").mkdir()
+    (tmp_path / "unrelated.pa").touch()
+    arguments = Namespace(identifier=DEFINITION.identifier)
+
+    assert _complete_input_bindings("source=source-", parsed_args=arguments) == [
+        "source=source-directory/",
+        "source=source-one.pa",
+        "source=source-two.pa",
+    ]
+
+
+def test_binding_completion_is_empty_without_a_known_procedure(
+    catalog: ProcedureCatalog,
+) -> None:
+    del catalog
+
+    assert _complete_input_bindings("", parsed_args=Namespace(identifier=None)) == []
+    assert (
+        _complete_input_bindings("", parsed_args=Namespace(identifier="missing")) == []
+    )
+    assert (
+        _complete_input_bindings(
+            "missing=value",
+            parsed_args=Namespace(identifier=DEFINITION.identifier),
+        )
+        == []
+    )
+
+
+def test_completion_ignores_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> None:
+        raise RuntimeError("discovery failed")
+
+    monkeypatch.setattr(
+        "provium.cli.commands.execute.discover_procedure_catalogs", fail
+    )
+
+    assert _complete_procedure_identifiers("") == []

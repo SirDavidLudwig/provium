@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from provium import (
     ArtifactReadBinding,
@@ -21,6 +22,74 @@ from provium import (
 )
 
 from ..command import Command
+
+
+def _complete_procedure_identifiers(prefix: str, **_: object) -> list[str]:
+    try:
+        identifiers = discover_procedure_catalogs().definitions
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted(
+        identifier for identifier in identifiers if identifier.startswith(prefix)
+    )
+
+
+def _complete_binding(
+    prefix: str,
+    parsed_args: argparse.Namespace,
+    record_name: str,
+) -> list[str]:
+    identifier = getattr(parsed_args, "identifier", None)
+    if not isinstance(identifier, str):
+        return []
+    try:
+        contract = _definition(identifier).resolve_contract()
+        record = getattr(contract, record_name)
+        fields = (
+            dict[str, object]()
+            if record is None
+            else cast(Mapping[str, object], record.fields)
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    field_name, separator, path_prefix = prefix.partition("=")
+    if not separator:
+        return [f"{name}=" for name in fields if name.startswith(field_name)]
+    if field_name not in fields:
+        return []
+    completions: list[str] = []
+    for value in sorted(glob.glob(f"{glob.escape(path_prefix)}*")):
+        path = Path(value)
+        suffix = "/" if path.is_dir() else ""
+        completions.append(f"{field_name}={value}{suffix}")
+    return completions
+
+
+def _complete_setup_bindings(
+    prefix: str,
+    *,
+    parsed_args: argparse.Namespace,
+    **_: object,
+) -> list[str]:
+    return _complete_binding(prefix, parsed_args, "SetupInputs")
+
+
+def _complete_input_bindings(
+    prefix: str,
+    *,
+    parsed_args: argparse.Namespace,
+    **_: object,
+) -> list[str]:
+    return _complete_binding(prefix, parsed_args, "Inputs")
+
+
+def _complete_output_bindings(
+    prefix: str,
+    *,
+    parsed_args: argparse.Namespace,
+    **_: object,
+) -> list[str]:
+    return _complete_binding(prefix, parsed_args, "Outputs")
 
 
 def _definition(identifier: str) -> ProcedureDefinition[Any]:
@@ -44,7 +113,8 @@ class ExecuteCommand(Command):
 
     def configure(self, parser: argparse.ArgumentParser) -> None:
         self._parser = parser
-        parser.add_argument("identifier", nargs="?")
+        identifier = parser.add_argument("identifier", nargs="?")
+        identifier.completer = _complete_procedure_identifiers  # type: ignore[attr-defined]
         parser.add_argument(
             "-h",
             "--help",
@@ -58,9 +128,12 @@ class ExecuteCommand(Command):
             help="List available procedures",
         )
         parser.add_argument("--config", action="append", default=[])
-        parser.add_argument("--setup-input", action="append", default=[])
-        parser.add_argument("--input", action="append", default=[])
-        parser.add_argument("--output", action="append", default=[])
+        setup_input = parser.add_argument("--setup-input", action="append", default=[])
+        setup_input.completer = _complete_setup_bindings  # type: ignore[attr-defined]
+        process_input = parser.add_argument("--input", action="append", default=[])
+        process_input.completer = _complete_input_bindings  # type: ignore[attr-defined]
+        output_binding = parser.add_argument("--output", action="append", default=[])
+        output_binding.completer = _complete_output_bindings  # type: ignore[attr-defined]
 
     def execute(self, arguments: argparse.Namespace) -> int:
         try:

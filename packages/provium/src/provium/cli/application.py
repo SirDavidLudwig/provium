@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from provium import __version__
 
 from .catalog import CommandCatalog
+from .completion import enable_completion
 from .discovery import discover_command_catalogs
 
 _COMMAND_DESTINATION = "_provium_command"
@@ -45,7 +46,9 @@ def run(
 ) -> int:
     """Parse arguments and execute the selected command."""
     selected_catalog = discover_command_catalogs() if catalog is None else catalog
-    parsed = create_parser(selected_catalog).parse_args(arguments)
+    parser = create_parser(selected_catalog)
+    enable_completion(parser)
+    parsed = parser.parse_args(arguments)
     command = getattr(parsed, _COMMAND_DESTINATION)
     return command.execute(parsed)
 
