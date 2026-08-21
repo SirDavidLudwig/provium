@@ -2,7 +2,7 @@ import json
 import pickle
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
-from types import SimpleNamespace
+from types import SimpleNamespace, new_class
 from typing import Any
 
 import pytest
@@ -361,6 +361,36 @@ def test_procedure_contract_validates_runtime_declarations(
             (ProcedureContract,),
             {attribute: value},
         )
+
+
+@pytest.mark.parametrize("attribute", ["SetupInputs", "Inputs", "Outputs"])
+def test_procedure_contract_io_declarations_can_be_none(attribute: str) -> None:
+    declarations: dict[str, object] = {
+        "SetupInputs": SetupInputs,
+        "Inputs": Inputs,
+        "Outputs": Outputs,
+    }
+    declarations[attribute] = None
+
+    contract = new_class(
+        "NullableIOContract",
+        (ProcedureContract[None],),
+        exec_body=lambda namespace: namespace.update(declarations),
+    )
+
+    assert getattr(contract, attribute) is None
+
+
+def test_procedure_contract_requires_at_least_one_io_declaration() -> None:
+    with pytest.raises(
+        TypeError,
+        match="at least one setup input, processing input, or output",
+    ):
+
+        class EmptyContract(ProcedureContract[None]):
+            SetupInputs = None
+            Inputs = None
+            Outputs = None
 
 
 def test_procedure_contract_cannot_override_compilation_hooks() -> None:

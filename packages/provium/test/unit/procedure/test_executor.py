@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ from provium import (
     ProcedureExecutionRecord,
     ProcedureExecutionResult,
     ProcedureExecutor,
+    ProcedureInputs,
     ProcedureProcessContext,
     ProcedureRecord,
     ProcedureSetupContext,
@@ -41,6 +43,83 @@ from provium import (
 
 class Config(ProcedureConfig):
     value: int = 1
+
+
+def test_executor_passes_none_for_undeclared_io(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: list[tuple[object, object, object]] = []
+
+    class NullableContract(ProcedureContract[None]):
+        SetupInputs = None
+
+        class Inputs(ProcedureInputs):
+            pass
+
+        Outputs = None
+
+    definition = ProcedureDefinition(
+        "example.NullableIOV1",
+        f"{__name__}:NullableProcedure",
+        "Nullable IO",
+        None,
+        NullableContract,
+    )
+
+    class NullableProcedure(Procedure[None, None, NullableContract.Inputs, None]):
+        def setup(
+            self,
+            context: ProcedureSetupContext,
+            configuration: None,
+            inputs: None,
+        ) -> None:
+            received.append((configuration, inputs, "setup"))
+
+        def process(
+            self,
+            context: ProcedureProcessContext,
+            configuration: None,
+            inputs: NullableContract.Inputs,
+            outputs: None,
+        ) -> None:
+            received.append((configuration, inputs, outputs))
+
+    NullableProcedure.definition = definition
+    monkeypatch.setattr(
+        sys.modules[__name__], "NullableProcedure", NullableProcedure, raising=False
+    )
+
+    ProcedureExecutor().execute(definition, inputs={})
+
+    assert received[0] == (None, None, "setup")
+    assert received[1][0] is None
+    assert isinstance(received[1][1], NullableContract.Inputs)
+    assert received[1][2] is None
+
+    prepared = ProcedureExecutor().prepare(definition)
+    with pytest.raises(TypeError, match="does not accept setup inputs"):
+        ProcedureExecutor._prepare_setup_inputs(definition, {"unexpected": object()})
+    input_type = NullableContract.Inputs
+    NullableContract.Inputs = None  # type: ignore[assignment]
+    assert ProcedureExecutor._prepare_process_inputs(definition, None) is None
+    with pytest.raises(TypeError, match="does not accept processing inputs"):
+        ProcedureExecutor._prepare_process_inputs(
+            definition,
+            {"unexpected": object()},
+        )
+    with pytest.raises(TypeError, match="does not accept outputs"):
+        ProcedureExecutor._prepare_process_outputs(
+            definition,
+            {"unexpected": object()},  # type: ignore[dict-item]
+        )
+
+    prepared.execute()
+    with pytest.raises(TypeError, match="does not accept processing inputs"):
+        prepared.execute(inputs={"unexpected": object()})
+    NullableContract.Inputs = input_type
+    with pytest.raises(TypeError, match="does not accept outputs"):
+        prepared.execute(inputs={}, outputs={"unexpected": object()})  # type: ignore[dict-item]
+    prepared.close()
 
 
 class Contract(ProcedureContract[Config]):

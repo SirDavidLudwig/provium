@@ -36,12 +36,12 @@ class _SetupTemporaryDirectory:
 
 class PreparedProcedure[
     ConfigT: ProcedureConfig | None,
-    InputsT: ProcedureInputs,
-    OutputsT: ProcedureOutputs,
+    InputsT: ProcedureInputs | None,
+    OutputsT: ProcedureOutputs | None,
 ]:
     """Own one configured procedure instance and its reusable setup state."""
 
-    def __init__[SetupInputsT: ProcedureInputs](
+    def __init__[SetupInputsT: ProcedureInputs | None](
         self,
         procedure: Procedure[ConfigT, SetupInputsT, InputsT, OutputsT],
         configuration: ConfigT,
@@ -61,7 +61,7 @@ class PreparedProcedure[
         except BaseException as error:
             self._close_setup_after_failure(error)
 
-    def _run_setup(self, setup_inputs: ProcedureInputs) -> None:
+    def _run_setup(self, setup_inputs: ProcedureInputs | None) -> None:
         with self._setup_session:
             self._setup_session.manage(self._setup_temporary_directory)
             with authorize_bindings(self._setup_bindings, {}, {}):
@@ -91,8 +91,8 @@ class PreparedProcedure[
         inputs: Mapping[
             str, ArtifactReadBinding[Any] | Sequence[ArtifactReadBinding[Any]]
         ]
-        | InputsT,
-        outputs: Mapping[str, ArtifactWriteBinding[Any]] | OutputsT,
+        | InputsT = None,
+        outputs: Mapping[str, ArtifactWriteBinding[Any]] | OutputsT = None,
         cancellation: CancellationToken | None = None,
     ) -> ProcedureExecutionResult:
         """Process one invocation on the prepared instance."""
@@ -123,10 +123,16 @@ class PreparedProcedure[
         if isinstance(supplied, ProcedureInputs):
             return cast(InputsT, supplied)
         definition = self._procedure.definition
+        record_type = definition.resolve_contract().Inputs
+        if record_type is None:
+            if supplied is not None and supplied != {}:
+                raise TypeError("procedure does not accept processing inputs")
+            return cast(InputsT, None)
+        supplied = {} if supplied is None else supplied
         try:
             return cast(
                 InputsT,
-                build_procedure_inputs(definition.resolve_contract().Inputs, supplied),
+                build_procedure_inputs(record_type, supplied),
             )
         except (TypeError, ValueError) as error:
             raise type(error)(
@@ -141,11 +147,17 @@ class PreparedProcedure[
         if isinstance(supplied, ProcedureOutputs):
             return cast(OutputsT, supplied)
         definition = self._procedure.definition
+        record_type = definition.resolve_contract().Outputs
+        if record_type is None:
+            if supplied is not None and supplied != {}:
+                raise TypeError("procedure does not accept outputs")
+            return cast(OutputsT, None)
+        supplied = {} if supplied is None else supplied
         try:
             return cast(
                 OutputsT,
                 build_procedure_outputs(
-                    definition.resolve_contract().Outputs,
+                    record_type,
                     supplied,
                 ),
             )
@@ -236,8 +248,10 @@ class PreparedProcedure[
 
     @staticmethod
     def _input_bindings(
-        inputs: ProcedureInputs,
+        inputs: ProcedureInputs | None,
     ) -> tuple[ArtifactReadBinding[Any], ...]:
+        if inputs is None:
+            return ()
         values = cast(dict[str, object], object.__getattribute__(inputs, "_values"))
         bindings: list[ArtifactReadBinding[Any]] = []
         for value in values.values():
@@ -249,8 +263,10 @@ class PreparedProcedure[
 
     def _output_bindings(
         self,
-        outputs: ProcedureOutputs,
+        outputs: ProcedureOutputs | None,
     ) -> dict[str, ArtifactWriteBinding[Any]]:
+        if outputs is None:
+            return {}
         values = cast(dict[str, object], object.__getattribute__(outputs, "_values"))
         bindings: dict[str, ArtifactWriteBinding[Any]] = {}
         for name, value in values.items():
