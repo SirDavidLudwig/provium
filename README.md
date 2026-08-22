@@ -1,15 +1,37 @@
 # Provium
 
-[![Tests](https://github.com/Project-Provium/provium/actions/workflows/test.yml/badge.svg)](https://github.com/Project-Provium/provium/actions/workflows/test.yml)
 [![Documentation](https://github.com/Project-Provium/provium/actions/workflows/docs.yml/badge.svg)](https://github.com/Project-Provium/provium/actions/workflows/docs.yml)
 [![codecov](https://codecov.io/gh/Project-Provium/provium/graph/badge.svg)](https://codecov.io/gh/Project-Provium/provium)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Project-Provium/provium/blob/main/LICENSE)
 
-This repository is a Python monorepo containing the Provium package and its
-example projects:
+Provium is a provenance-first Python framework for building trustworthy,
+reproducible data workflows. It records how artifacts were produced as part of
+normal execution, connecting each result to the procedure, inputs, and execution
+that created it.
 
-- [`packages/provium/`](packages/provium/) — the typed library, command-line
-  interface, and command plugin system.
-- [`examples/`](examples/) — installable example projects.
+Instead of treating lineage as separate documentation that can drift out of
+date, Provium makes provenance part of the workflow itself. The result is an
+auditable history that helps teams understand where data came from, reproduce
+past work, and inspect dependencies with confidence.
+
+[Read the documentation](https://project-provium.github.io/provium/) to get
+started and explore the complete guides and API reference.
+
+## What Provium provides
+
+- **Provenance-aware artifacts** that retain their production history.
+- **Typed procedures** for defining clear, reusable units of work.
+- **Reproducible execution** with recorded inputs, outputs, and identities.
+- **Lineage inspection and visualization** through Python and the command line,
+  including Graphviz and Mermaid output.
+- **Extensible tooling** through a typed library, CLI, and command plugin system.
+
+## Repository layout
+
+- [`packages/provium/`](packages/provium/) — the Provium library, command-line
+  interface, and tests.
+- [`examples/`](examples/) — installable projects demonstrating Provium in use.
+- [`docs/`](docs/) — guides, concepts, and reference documentation.
 
 ## Development
 

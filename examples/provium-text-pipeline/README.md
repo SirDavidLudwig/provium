@@ -1,5 +1,7 @@
 # Provium Text Pipeline Example
 
+[![Tests](https://github.com/Project-Provium/provium/actions/workflows/test.yml/badge.svg)](https://github.com/Project-Provium/provium/actions/workflows/test.yml)
+
 This installable example demonstrates a catalog-discovered artifact pipeline:
 
 - `DocumentV1` stores a UTF-8 document and loads or dumps `.txt` files.
