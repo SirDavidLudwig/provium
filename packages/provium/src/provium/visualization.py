@@ -25,7 +25,6 @@ def _require_lineage(lineage: ArtifactLineage) -> None:
         raise TypeError("lineage must be an ArtifactLineage")
 
 
-
 def _graphviz_graph(
     lineage: ArtifactLineage,
     *,
@@ -112,9 +111,7 @@ def lineage_to_dot(
         label_parts = [_dot_primary(reference.artifact_identifier)]
         if show_artifact_identities:
             label_parts.append(
-                _dot_field(
-                    "Identity:", reference.identity, color="#0284C7"
-                )
+                _dot_field("Identity:", reference.identity, color="#0284C7")
             )
         label = "<BR/>".join(label_parts)
         lines.append(
@@ -125,14 +122,10 @@ def lineage_to_dot(
     for identity, node in execution_nodes.items():
         execution = lineage.executions[identity]
         procedure = execution.procedure
-        label_parts = [
-            _dot_primary(procedure.name)
-        ]
+        label_parts = [_dot_primary(procedure.name)]
         if show_procedure_versions:
             label_parts.append(
-                _dot_field(
-                    "Version:", procedure.version, color="#7C3AED"
-                )
+                _dot_field("Version:", procedure.version, color="#7C3AED")
             )
         if show_execution_identities:
             label_parts.append(
@@ -182,9 +175,7 @@ def lineage_to_mermaid(
         label_parts = [_mermaid_primary(reference.artifact_identifier)]
         if show_artifact_identities:
             label_parts.append(
-                _mermaid_field(
-                    "Identity:", reference.identity, color="#0284C7"
-                )
+                _mermaid_field("Identity:", reference.identity, color="#0284C7")
             )
         label = "<br/>".join(label_parts)
         lines.append(f'    {node}["{label}"]:::artifact')
@@ -193,9 +184,7 @@ def lineage_to_mermaid(
         label_parts = [_mermaid_primary(procedure.name)]
         if show_procedure_versions:
             label_parts.append(
-                _mermaid_field(
-                    "Version:", procedure.version, color="#7C3AED"
-                )
+                _mermaid_field("Version:", procedure.version, color="#7C3AED")
             )
         if show_execution_identities:
             label_parts.append(

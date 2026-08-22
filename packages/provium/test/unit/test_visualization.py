@@ -276,8 +276,7 @@ def test_mermaid_adapter_validates_availability_and_renders(
 
     monkeypatch.setattr("provium.visualization.subprocess.run", run)
     assert (
-        render_lineage(lineage(), format="svg", backend="mermaid")
-        == b"mermaid-image"
+        render_lineage(lineage(), format="svg", backend="mermaid") == b"mermaid-image"
     )
 
 

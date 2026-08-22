@@ -38,31 +38,35 @@ def test_render_appends_png_and_passes_extension_to_backend(
     )
     monkeypatch.setattr(
         "provium.cli.commands.graph.render_lineage",
-        lambda lineage, *, format, backend, show_artifact_identities,
-        show_procedure_versions, show_execution_identities: calls.append(
-            (
-                format,
-                backend,
-                show_artifact_identities,
-                show_procedure_versions,
-                show_execution_identities,
+        lambda lineage, *, format, backend, show_artifact_identities, show_procedure_versions, show_execution_identities: (
+            calls.append(
+                (
+                    format,
+                    backend,
+                    show_artifact_identities,
+                    show_procedure_versions,
+                    show_execution_identities,
+                )
             )
-        )
-        or b"image",
+            or b"image"
+        ),
     )
 
-    assert GraphCommand().execute(
-        parse(
-            "render",
-            "artifact.pvm",
-            str(output),
-            "--backend",
-            "mermaid",
-            "-a",
-            "-p",
-            "-e",
+    assert (
+        GraphCommand().execute(
+            parse(
+                "render",
+                "artifact.pvm",
+                str(output),
+                "--backend",
+                "mermaid",
+                "-a",
+                "-p",
+                "-e",
+            )
         )
-    ) == 0
+        == 0
+    )
     assert not output.exists()
     assert output.with_suffix(".png").read_bytes() == b"image"
     assert calls == [("png", "mermaid", True, True, True)]
@@ -80,8 +84,9 @@ def test_render_passes_arbitrary_extension_to_backend(
     formats: list[str] = []
     monkeypatch.setattr(
         "provium.cli.commands.graph.render_lineage",
-        lambda lineage, *, format, backend, **kwargs: formats.append(format)
-        or b"image",
+        lambda lineage, *, format, backend, **kwargs: (
+            formats.append(format) or b"image"
+        ),
     )
 
     assert GraphCommand().execute(parse("render", "artifact.pvm", str(output))) == 0
@@ -109,9 +114,10 @@ def test_source_writes_stdout_or_exact_optional_path(
     assert capsys.readouterr().out == "dot source\n"
 
     output = tmp_path / "source-without-extension"
-    assert GraphCommand().execute(
-        parse("source", "artifact.pvm", "mermaid", str(output))
-    ) == 0
+    assert (
+        GraphCommand().execute(parse("source", "artifact.pvm", "mermaid", str(output)))
+        == 0
+    )
     assert output.read_text() == "mermaid source\n"
 
 
@@ -130,16 +136,19 @@ def test_source_forwards_hash_display_flags(
         lambda lineage, **kwargs: options.append(kwargs) or "source",
     )
 
-    assert GraphCommand().execute(
-        parse(
-            "source",
-            "artifact.pvm",
-            "dot",
-            str(output),
-            "-a",
-            "-e",
+    assert (
+        GraphCommand().execute(
+            parse(
+                "source",
+                "artifact.pvm",
+                "dot",
+                str(output),
+                "-a",
+                "-e",
+            )
         )
-    ) == 0
+        == 0
+    )
     assert options == [
         {
             "show_artifact_identities": True,
@@ -164,18 +173,18 @@ def test_existing_output_prompts_on_stderr_and_honors_response(
     )
     monkeypatch.setattr(sys, "stdin", TTYInput("n\n"))
 
-    assert GraphCommand().execute(
-        parse("source", "artifact.pvm", "dot", str(output))
-    ) == 2
+    assert (
+        GraphCommand().execute(parse("source", "artifact.pvm", "dot", str(output))) == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "Overwrite" in captured.err
     assert output.read_text() == "original"
 
     monkeypatch.setattr(sys, "stdin", TTYInput("y\n"))
-    assert GraphCommand().execute(
-        parse("source", "artifact.pvm", "dot", str(output))
-    ) == 0
+    assert (
+        GraphCommand().execute(parse("source", "artifact.pvm", "dot", str(output))) == 0
+    )
     assert output.read_text() == "replacement"
 
 
@@ -194,12 +203,16 @@ def test_force_overwrites_and_noninteractive_input_fails_without_it(
     )
     monkeypatch.setattr(sys, "stdin", io.StringIO("y\n"))
 
-    assert GraphCommand().execute(
-        parse("source", "artifact.pvm", "mermaid", str(output))
-    ) == 2
+    assert (
+        GraphCommand().execute(parse("source", "artifact.pvm", "mermaid", str(output)))
+        == 2
+    )
     assert output.read_text() == "original"
 
-    assert GraphCommand().execute(
-        parse("source", "artifact.pvm", "mermaid", str(output), "-y")
-    ) == 0
+    assert (
+        GraphCommand().execute(
+            parse("source", "artifact.pvm", "mermaid", str(output), "-y")
+        )
+        == 0
+    )
     assert output.read_text() == "replacement"

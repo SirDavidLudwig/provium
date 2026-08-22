@@ -97,9 +97,7 @@ class GraphCommand(Command):
         try:
             arguments.graph_handler(arguments)
         except EXPECTED_CLI_ERRORS as error:
-            return print_cli_error(
-                f"generating {arguments.graph_action} graph", error
-            )
+            return print_cli_error(f"generating {arguments.graph_action} graph", error)
         return 0
 
     @staticmethod
