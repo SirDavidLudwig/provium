@@ -14,6 +14,7 @@ from provium.cli import (
 )
 from provium.cli.commands.artifact import ArtifactCommand
 from provium.cli.commands.execute import ExecuteCommand
+from provium.cli.commands.graph import GraphCommand
 from provium.cli.discovery import ENTRY_POINT_GROUP
 
 
@@ -76,6 +77,7 @@ def test_discovers_and_combines_installed_catalogs(
     assert discovered.commands == {
         "execute": ExecuteCommand,
         "artifact": ArtifactCommand,
+        "graph": GraphCommand,
         "first": FirstCommand,
         "second": SecondCommand,
     }
@@ -92,6 +94,7 @@ def test_empty_plugin_discovery_returns_the_core_catalog(
     assert tuple(discover_command_catalogs().commands) == (
         "execute",
         "artifact",
+        "graph",
     )
 
 

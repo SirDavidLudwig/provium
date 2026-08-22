@@ -69,6 +69,7 @@ from .provenance import (
     ProcedureRecord,
 )
 from .session import Session, current_session, session
+from .visualization import lineage_to_dot, lineage_to_mermaid, render_lineage
 
 __version__ = version("provium")
 
@@ -125,12 +126,15 @@ __all__ = [
     "discover_procedure_catalogs",
     "encode_header",
     "input",
+    "lineage_to_dot",
+    "lineage_to_mermaid",
     "load_json_configuration",
     "load_yaml_configuration",
     "optional_input",
     "optional_output",
     "output",
     "repeated_input",
+    "render_lineage",
     "read_artifact_header",
     "reset_artifact_discovery",
     "reset_procedure_discovery",
