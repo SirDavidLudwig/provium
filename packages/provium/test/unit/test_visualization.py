@@ -42,6 +42,11 @@ def lineage() -> ArtifactLineage:
     )
 
 
+def test_backends_are_split_into_dedicated_modules() -> None:
+    assert lineage_to_dot.__module__ == "provium.tool.visualization.graphviz"
+    assert lineage_to_mermaid.__module__ == "provium.tool.visualization.mermaid"
+
+
 def test_source_generators_hide_hashes_by_default() -> None:
     value = lineage()
 
@@ -122,17 +127,19 @@ def test_source_generators_reject_non_lineage_values() -> None:
         lineage_to_dot(object())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="ArtifactLineage"):
         lineage_to_mermaid(object())  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="ArtifactLineage"):
+        render_lineage(object(), format="png")  # type: ignore[arg-type]
 
 
 def test_render_auto_prefers_graphviz(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
-        "provium.visualization._render_graphviz",
+        "provium.tool.visualization._render_graphviz",
         lambda value, format: calls.append(("graphviz", format)) or b"graphviz",
     )
     monkeypatch.setattr(
-        "provium.visualization._render_mermaid",
+        "provium.tool.visualization._render_mermaid",
         lambda value, format: calls.append(("mermaid", format)) or b"mermaid",
     )
 
@@ -143,7 +150,10 @@ def test_render_auto_prefers_graphviz(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_render_auto_falls_back_only_for_unavailable_or_unsupported_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from provium.visualization import BackendUnavailableError, UnsupportedFormatError
+    from provium.tool.visualization import (
+        BackendUnavailableError,
+        UnsupportedFormatError,
+    )
 
     calls: list[str] = []
 
@@ -151,9 +161,9 @@ def test_render_auto_falls_back_only_for_unavailable_or_unsupported_backend(
         calls.append("graphviz")
         raise BackendUnavailableError("graphviz unavailable")
 
-    monkeypatch.setattr("provium.visualization._render_graphviz", unavailable)
+    monkeypatch.setattr("provium.tool.visualization._render_graphviz", unavailable)
     monkeypatch.setattr(
-        "provium.visualization._render_mermaid",
+        "provium.tool.visualization._render_mermaid",
         lambda value, format: calls.append("mermaid") or b"fallback",
     )
     assert render_lineage(lineage(), format="png") == b"fallback"
@@ -162,26 +172,26 @@ def test_render_auto_falls_back_only_for_unavailable_or_unsupported_backend(
     def unsupported(value: ArtifactLineage, format: str) -> bytes:
         raise UnsupportedFormatError("not supported")
 
-    monkeypatch.setattr("provium.visualization._render_graphviz", unsupported)
+    monkeypatch.setattr("provium.tool.visualization._render_graphviz", unsupported)
     assert render_lineage(lineage(), format="new-format") == b"fallback"
 
 
 def test_explicit_backend_is_strict_and_execution_errors_are_not_masked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from provium.visualization import BackendUnavailableError
+    from provium.tool.visualization import BackendUnavailableError
 
     def unavailable(value: ArtifactLineage, format: str) -> bytes:
         raise BackendUnavailableError("graphviz unavailable")
 
-    monkeypatch.setattr("provium.visualization._render_graphviz", unavailable)
+    monkeypatch.setattr("provium.tool.visualization._render_graphviz", unavailable)
     with pytest.raises(BackendUnavailableError, match="graphviz unavailable"):
         render_lineage(lineage(), format="png", backend="graphviz")
 
     def broken(value: ArtifactLineage, format: str) -> bytes:
         raise RuntimeError("renderer crashed")
 
-    monkeypatch.setattr("provium.visualization._render_graphviz", broken)
+    monkeypatch.setattr("provium.tool.visualization._render_graphviz", broken)
     with pytest.raises(RuntimeError, match="renderer crashed"):
         render_lineage(lineage(), format="png")
 
@@ -224,7 +234,10 @@ def install_fake_graphviz(
 def test_graphviz_adapter_is_lazy_and_owns_format_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from provium.visualization import BackendUnavailableError, UnsupportedFormatError
+    from provium.tool.visualization import (
+        BackendUnavailableError,
+        UnsupportedFormatError,
+    )
 
     monkeypatch.setitem(sys.modules, "graphviz", None)
     with pytest.raises(BackendUnavailableError, match="Python package"):
@@ -244,7 +257,7 @@ def test_graphviz_missing_executable_is_unavailable(
         result=FakeExecutableNotFound("missing dot"),
     )
 
-    from provium.visualization import BackendUnavailableError
+    from provium.tool.visualization import BackendUnavailableError
 
     with pytest.raises(BackendUnavailableError, match="executable on PATH"):
         render_lineage(lineage(), format="png", backend="graphviz")
@@ -253,16 +266,23 @@ def test_graphviz_missing_executable_is_unavailable(
 def test_mermaid_adapter_validates_availability_and_renders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from provium.visualization import BackendUnavailableError, UnsupportedFormatError
+    from provium.tool.visualization import (
+        BackendUnavailableError,
+        UnsupportedFormatError,
+    )
 
     with pytest.raises(UnsupportedFormatError, match="supported formats"):
         render_lineage(lineage(), format="webp", backend="mermaid")
 
-    monkeypatch.setattr("provium.visualization.shutil.which", lambda name: None)
+    monkeypatch.setattr(
+        "provium.tool.visualization.mermaid.shutil.which", lambda name: None
+    )
     with pytest.raises(BackendUnavailableError, match="mmdc"):
         render_lineage(lineage(), format="png", backend="mermaid")
 
-    monkeypatch.setattr("provium.visualization.shutil.which", lambda name: "/bin/mmdc")
+    monkeypatch.setattr(
+        "provium.tool.visualization.mermaid.shutil.which", lambda name: "/bin/mmdc"
+    )
 
     def run(command: list[str], **kwargs: object) -> None:
         assert command[:4] == ["/bin/mmdc", "--input", "-", "--output"]
@@ -274,7 +294,7 @@ def test_mermaid_adapter_validates_availability_and_renders(
 
         Path(command[4]).write_bytes(b"mermaid-image")
 
-    monkeypatch.setattr("provium.visualization.subprocess.run", run)
+    monkeypatch.setattr("provium.tool.visualization.mermaid.subprocess.run", run)
     assert (
         render_lineage(lineage(), format="svg", backend="mermaid") == b"mermaid-image"
     )
@@ -283,7 +303,10 @@ def test_mermaid_adapter_validates_availability_and_renders(
 def test_auto_reports_when_no_backend_can_render(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from provium.visualization import BackendUnavailableError, UnsupportedFormatError
+    from provium.tool.visualization import (
+        BackendUnavailableError,
+        UnsupportedFormatError,
+    )
 
     def unavailable(value: ArtifactLineage, format: str) -> bytes:
         raise BackendUnavailableError("graphviz missing")
@@ -291,7 +314,7 @@ def test_auto_reports_when_no_backend_can_render(
     def unsupported(value: ArtifactLineage, format: str) -> bytes:
         raise UnsupportedFormatError("mermaid unsupported")
 
-    monkeypatch.setattr("provium.visualization._render_graphviz", unavailable)
-    monkeypatch.setattr("provium.visualization._render_mermaid", unsupported)
+    monkeypatch.setattr("provium.tool.visualization._render_graphviz", unavailable)
+    monkeypatch.setattr("provium.tool.visualization._render_mermaid", unsupported)
     with pytest.raises(RuntimeError, match="graphviz missing; mermaid unsupported"):
         render_lineage(lineage(), format="custom")

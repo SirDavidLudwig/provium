@@ -48,6 +48,12 @@ provenance execution identity and returns 0.
 Run `provium --help` or `provium execute --help` for the installed command
 surface.
 
+## Graph provenance
+
+Render an artifact's lineage or generate DOT and Mermaid source with
+`provium graph`. See [Provenance graphs](graphing.md) for backend setup, label
+options, output behavior, and Python examples.
+
 ## Enable tab completion
 
 Provium completes commands, options, discovered procedure and artifact

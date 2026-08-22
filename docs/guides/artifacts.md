@@ -17,13 +17,16 @@ INTEGER_DEFINITION = ArtifactDefinition(
     description="A signed 64-bit integer.",
 )
 
+
 class IntegerReader(ArtifactReader):
     def read(self) -> int:
         return INTEGER.unpack(self.body.read(INTEGER.size))[0]
 
+
 class IntegerWriter(ArtifactWriter):
     def write(self, value: int) -> int:
         return self.body.write(INTEGER.pack(value))
+
 
 class IntegerArtifact(Artifact[IntegerReader, IntegerWriter]):
     definition = INTEGER_DEFINITION

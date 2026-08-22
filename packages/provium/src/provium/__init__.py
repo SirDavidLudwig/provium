@@ -69,7 +69,7 @@ from .provenance import (
     ProcedureRecord,
 )
 from .session import Session, current_session, session
-from .visualization import lineage_to_dot, lineage_to_mermaid, render_lineage
+from .tool.visualization import lineage_to_dot, lineage_to_mermaid, render_lineage
 
 __version__ = version("provium")
 

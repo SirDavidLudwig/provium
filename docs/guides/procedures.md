@@ -8,12 +8,20 @@ configuration and artifact ports without importing the implementation; a
 
 ```python
 from provium import (
-    ProcedureConfig, ProcedureContract, ProcedureInputs, ProcedureOutputs,
-    input, optional_input, output, repeated_input,
+    ProcedureConfig,
+    ProcedureContract,
+    ProcedureInputs,
+    ProcedureOutputs,
+    input,
+    optional_input,
+    output,
+    repeated_input,
 )
+
 
 class DetectionConfig(ProcedureConfig):
     threshold: float = 0.5
+
 
 class DetectContract(ProcedureContract[DetectionConfig]):
     configuration = DetectionConfig
@@ -47,12 +55,15 @@ DETECT = ProcedureDefinition(
     "example_plugin.contracts:DetectContract",
 )
 
-class Detect(Procedure[
-    DetectionConfig,
-    DetectContract.SetupInputs,
-    DetectContract.Inputs,
-    DetectContract.Outputs,
-]):
+
+class Detect(
+    Procedure[
+        DetectionConfig,
+        DetectContract.SetupInputs,
+        DetectContract.Inputs,
+        DetectContract.Outputs,
+    ]
+):
     definition = DETECT
 
     def setup(self, context, configuration, inputs):
@@ -123,7 +134,8 @@ from provium import ImperativeProcedure
 source = ImageArtifact.bind_read("source.pa")
 destination = ImageArtifact.bind_write("copy.pa")
 execution = ImperativeProcedure("example.CopyV1", "contract-digest").execute(
-    inputs=(source,), outputs={"copy": destination},
+    inputs=(source,),
+    outputs={"copy": destination},
 )
 with execution:
     with source.open() as reader:

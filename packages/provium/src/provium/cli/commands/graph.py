@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from provium.artifact import read_artifact_header
-from provium.visualization import (
+from provium.tool.visualization import (
     lineage_to_dot,
     lineage_to_mermaid,
     render_lineage,
