@@ -38,14 +38,14 @@ def test_render_appends_png_and_passes_extension_to_backend(
     )
     monkeypatch.setattr(
         "provium.cli.commands.graph.render_lineage",
-        lambda lineage, *, format, backend, show_artifact_identities, show_procedure_versions, show_execution_identities: (
+        lambda lineage, **options: (
             calls.append(
                 (
-                    format,
-                    backend,
-                    show_artifact_identities,
-                    show_procedure_versions,
-                    show_execution_identities,
+                    options["format"],
+                    options["backend"],
+                    options["show_artifact_identities"],
+                    options["show_procedure_versions"],
+                    options["show_execution_identities"],
                 )
             )
             or b"image"
