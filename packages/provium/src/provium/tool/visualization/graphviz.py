@@ -85,9 +85,7 @@ def lineage_to_dot(
         if show_procedure_versions:
             label_parts.append(_field("Version:", procedure.version, color="#7C3AED"))
         if show_execution_identities:
-            label_parts.append(
-                _field("Execution Identity:", identity, color="#64748B")
-            )
+            label_parts.append(_field("Execution Identity:", identity, color="#64748B"))
         label = "<BR/>".join(label_parts)
         lines.append(
             f'    {node} [label=<{label}>, color="#A78BFA", '

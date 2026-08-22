@@ -70,9 +70,7 @@ def lineage_to_mermaid(
         if show_procedure_versions:
             label_parts.append(_field("Version:", procedure.version, color="#7C3AED"))
         if show_execution_identities:
-            label_parts.append(
-                _field("Execution Identity:", identity, color="#64748B")
-            )
+            label_parts.append(_field("Execution Identity:", identity, color="#64748B"))
         label = "<br/>".join(label_parts)
         lines.append(f'    {node}(["{label}"]):::procedure')
     for identity in sorted(lineage.executions):
