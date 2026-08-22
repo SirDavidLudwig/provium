@@ -33,6 +33,7 @@ nav:
       - Artifacts: guides/artifacts.md
       - Procedures and provenance: guides/procedures.md
       - Dumping and loading: guides/transfers.md
+      - Provenance graphs: guides/graphing.md
       - Command-line tools: guides/cli.md
   - API reference:
       - Provium core: reference/provium.md
